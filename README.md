@@ -273,6 +273,53 @@ newsletter/
 
 **Retention**: Cleanup Worker (cron) prunes R2 + D1 per `RETENTION_DAYS`.
 
+## 9b. Warmup Schedule
+
+To preserve sending reputation when bringing the domain online, the consumer
+worker enforces a stepped weekly cap with a flat daily ceiling. Warmup is
+**off by default** — set `WARMUP_START_DATE` (UTC date of week 0) on both
+the consumer and admin workers to turn it on. With it disabled the consumer
+behaves exactly as before (no caps).
+
+| Week  | Weekly cap                       | Daily cap |
+| ----- | -------------------------------- | --------- |
+| 0     | 500                              | 5,000     |
+| 1     | 1,500                            | 5,000     |
+| 2     | 5,000                            | 5,000     |
+| 3     | 12,000                           | 5,000     |
+| 4     | 25,000                           | 5,000     |
+| 5     | 40,000                           | 10,000    |
+| 6+    | `WARMUP_TARGET_WEEKLY` (50,000)  | 10,000    |
+
+Whichever cap (daily or weekly) runs out first throttles. In practice the
+daily cap is non-binding for weeks 0–2 (the weekly cap is lower) and only
+starts to bite from week 3 onwards.
+
+**Enforcement**: at the start of each `queue()` invocation the consumer
+counts `sends` since the current daily and weekly window starts (UTC), and
+each message either sends in full, sends a partial slice and re-enqueues the
+overflow with `delaySeconds` to the next window, or `msg.retry`s with a
+delay if the cap is already exhausted. Cloudflare Queues caps `delaySeconds`
+at 12 h, so longer waits are achieved by repeated retries.
+
+**Configuration** (mirror these vars on `workers/consumer/wrangler.toml` and
+`workers/admin/wrangler.toml`):
+
+| Var                       | Default                                  | Meaning                                                |
+| ------------------------- | ---------------------------------------- | ------------------------------------------------------ |
+| `WARMUP_START_DATE`       | `""` (disabled)                          | ISO date of week 0, e.g. `2026-01-06`.                 |
+| `WARMUP_TARGET_WEEKLY`    | `50000`                                  | Steady-state weekly cap from week 6 onwards.           |
+| `WARMUP_SCHEDULE`         | `[500,1500,5000,12000,25000,40000]`      | Per-week weekly caps. Empty array → formula fallback.  |
+| `WARMUP_DAILY_CAP_EARLY`  | `5000`                                   | Daily cap for weeks below `WARMUP_LATE_START_WEEK`.    |
+| `WARMUP_DAILY_CAP_LATE`   | `10000`                                  | Daily cap from `WARMUP_LATE_START_WEEK` onwards.       |
+| `WARMUP_LATE_START_WEEK`  | `5`                                      | First week using the late daily cap.                   |
+
+If `WARMUP_SCHEDULE = "[]"` the formula `min(target, 500 * 2.5^week)` is used
+as a fallback.
+
+**Visibility**: the admin GUI's Dashboard renders two progress bars (Today /
+This week) backed by `GET /api/quota`, polled every 60 s.
+
 ## 10. Operational Concerns
 - **Rate limits**: tune queue concurrency to Email Sending quota; intra-batch pacing if needed.
 - **Idempotency**: `UNIQUE(campaign_id, subscriber_id)` on `sends` prevents duplicates on retry.
