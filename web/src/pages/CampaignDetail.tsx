@@ -1,0 +1,174 @@
+import { useQuery } from '@tanstack/react-query';
+import { Link, useParams } from 'react-router-dom';
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { api, CampaignDetail as Detail, Page, Send, TimeseriesRow } from '../api';
+import { useAuth } from '../auth';
+import { StatusPill } from './Subscribers';
+import { useState } from 'react';
+
+export default function CampaignDetail() {
+  const { id = '' } = useParams();
+  const { token } = useAuth();
+  const detail = useQuery({
+    queryKey: ['campaign', id],
+    queryFn: () => api<Detail>(token!, `/api/campaigns/${id}`),
+  });
+  const ts = useQuery({
+    queryKey: ['campaign-ts', id],
+    queryFn: () => api<{ items: TimeseriesRow[] }>(token!, `/api/campaigns/${id}/timeseries?bucket=hour`),
+  });
+
+  const evt = Object.fromEntries((detail.data?.events ?? []).map((e) => [e.type, e.n]));
+  const chartData = pivotTimeseries(ts.data?.items ?? []);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <Link to="/campaigns" className="text-sm text-slate-500 hover:underline">← Campaigns</Link>
+        <h1 className="text-xl font-semibold mt-1">{detail.data?.campaign.subject ?? ''}</h1>
+        <div className="text-xs text-slate-500 font-mono">{id}</div>
+      </div>
+
+      {detail.data && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <Stat label="Status" value={detail.data.campaign.status} />
+            <Stat label="Recipients" value={detail.data.campaign.total_recipients} />
+            <Stat label="Sent" value={detail.data.campaign.sent_count} ok />
+            <Stat label="Failed" value={detail.data.campaign.failed_count} bad />
+            <Stat label="Opens" value={evt.open ?? 0} />
+            <Stat label="Clicks" value={evt.click ?? 0} />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Stat label="Bounces" value={evt.bounce ?? 0} />
+            <Stat label="Unsubs" value={evt.unsubscribe ?? 0} />
+            <Stat label="Downloads" value={evt.download ?? 0} />
+            <Stat label="Attachments" value={detail.data.campaign.attachment_count} />
+          </div>
+        </>
+      )}
+
+      <section>
+        <h2 className="text-base font-medium mb-2">Events over time</h2>
+        <div className="h-72 bg-white border rounded p-2">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <XAxis dataKey="bucket" fontSize={10} />
+              <YAxis fontSize={10} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="open" stackId="a" fill="#10b981" />
+              <Bar dataKey="click" stackId="a" fill="#3b82f6" />
+              <Bar dataKey="bounce" stackId="a" fill="#f59e0b" />
+              <Bar dataKey="unsubscribe" stackId="a" fill="#94a3b8" />
+              <Bar dataKey="download" stackId="a" fill="#8b5cf6" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+
+      {detail.data && detail.data.attachments.length > 0 && (
+        <section>
+          <h2 className="text-base font-medium mb-2">Attachments</h2>
+          <ul className="bg-white border rounded divide-y text-sm">
+            {detail.data.attachments.map((a) => (
+              <li key={a.id} className="p-2 flex justify-between">
+                <span>{a.filename} <span className="text-xs text-slate-500">({a.disposition})</span></span>
+                <span className="text-xs text-slate-500">{a.content_type} · {(a.size / 1024).toFixed(1)} KB</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <SendsTable campaignId={id} />
+    </div>
+  );
+}
+
+function Stat({ label, value, ok, bad }: { label: string; value: string | number; ok?: boolean; bad?: boolean }) {
+  const cls = ok ? 'text-emerald-700' : bad ? 'text-red-700' : 'text-slate-900';
+  return (
+    <div className="bg-white rounded border p-3">
+      <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`text-lg font-semibold mt-0.5 ${cls}`}>
+        {typeof value === 'number' ? value.toLocaleString() : value}
+      </div>
+    </div>
+  );
+}
+
+function pivotTimeseries(rows: TimeseriesRow[]): Record<string, number | string>[] {
+  const buckets = new Map<string, Record<string, number | string>>();
+  for (const r of rows) {
+    const b = buckets.get(r.bucket) ?? { bucket: r.bucket };
+    (b as Record<string, number | string>)[r.type] = r.n;
+    buckets.set(r.bucket, b);
+  }
+  return Array.from(buckets.values());
+}
+
+function SendsTable({ campaignId }: { campaignId: string }) {
+  const { token } = useAuth();
+  const [status, setStatus] = useState('failed');
+  const [cursor, setCursor] = useState(0);
+  const sends = useQuery({
+    queryKey: ['campaign-sends', campaignId, status, cursor],
+    queryFn: () => {
+      const sp = new URLSearchParams({ limit: '50', cursor: String(cursor) });
+      if (status) sp.set('status', status);
+      return api<Page<Send>>(token!, `/api/campaigns/${campaignId}/sends?${sp.toString()}`);
+    },
+  });
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-2">
+        <h2 className="text-base font-medium">Sends</h2>
+        <select
+          value={status}
+          onChange={(e) => { setStatus(e.target.value); setCursor(0); }}
+          className="border rounded px-2 py-1 text-xs ml-auto"
+        >
+          <option value="">All</option>
+          <option value="sent">Sent</option>
+          <option value="failed">Failed</option>
+          <option value="queued">Queued</option>
+        </select>
+      </div>
+      <div className="bg-white border rounded overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-slate-600">
+            <tr>
+              <th className="text-left p-2">Email</th>
+              <th className="text-left p-2">Status</th>
+              <th className="text-left p-2">Sent at</th>
+              <th className="text-left p-2">Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sends.data?.items.map((s) => (
+              <tr key={s.id} className="border-t">
+                <td className="p-2 font-mono text-xs">{s.email ?? `#${s.subscriber_id}`}</td>
+                <td className="p-2"><StatusPill status={s.status} /></td>
+                <td className="p-2 text-slate-500">{s.sent_at ?? '—'}</td>
+                <td className="p-2 text-red-700 text-xs">{s.error ?? ''}</td>
+              </tr>
+            ))}
+            {sends.data && sends.data.items.length === 0 && (
+              <tr><td colSpan={4} className="p-4 text-center text-slate-500">No matching sends.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex justify-end gap-2 text-sm mt-2">
+        <button onClick={() => setCursor(0)} disabled={cursor === 0} className="border rounded px-3 py-1 disabled:opacity-40">First</button>
+        <button
+          onClick={() => sends.data?.nextCursor && setCursor(Number(sends.data.nextCursor))}
+          disabled={!sends.data?.nextCursor}
+          className="border rounded px-3 py-1 disabled:opacity-40"
+        >Next →</button>
+      </div>
+    </section>
+  );
+}

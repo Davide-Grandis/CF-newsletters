@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "deploy:all": "for w in ingest consumer tracker bounce cleanup admin; do (cd workers/$w && wrangler deploy) || exit 1; done",
+    "build:web": "cd web && npm run build",
+    "deploy:admin": "npm run build:web && cd workers/admin && wrangler deploy",
+    "deploy:all": "npm run build:web && for w in ingest consumer tracker bounce cleanup admin; do (cd workers/$w && wrangler deploy) || exit 1; done",
     "db:apply": "wrangler d1 execute newsletter_db --file=db/schema.sql"
   },
   "devDependencies": {

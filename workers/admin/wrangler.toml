@@ -7,4 +7,10 @@ binding = "DB"
 database_name = "newsletter_db"
 database_id = "REPLACE_WITH_D1_ID"
 
+# Static SPA built from /web is emitted to ./public by `npm run build:web`.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
 # Secret: ADMIN_TOKEN

@@ -18,15 +18,42 @@ raw archives in R2.
 | `tracker`   | HTTP           | Pixel, signed click redirect, unsubscribe, attachment download |
 | `bounce`    | Email handler  | Parse DSN/ARF on `bounce+*@`, update subscriber + events       |
 | `cleanup`   | Cron Trigger   | Retention: prune R2 + D1                                       |
-| `admin`     | HTTP (opt.)    | Subscriber CRUD, stats, DLQ replay                             |
+| `admin`     | HTTP + SPA     | JSON API + browser GUI for subscribers, campaigns, bounces     |
 
 ## Layout
 
 ```
 workers/{ingest,consumer,tracker,bounce,cleanup,admin}/
 shared/{mime,attachments,tracking,db}.ts
+web/                       # Vite + React admin SPA
 db/{schema.sql,migrations/}
+docs/workers.md            # per-worker deep dives
 ```
+
+## Admin GUI
+
+The `admin` worker exposes a JSON API under `/api/*` (bearer-token auth via
+`ADMIN_TOKEN`) and serves a Vite + React SPA from the same origin via the
+`[assets]` binding. Sign in by pasting the token; the SPA stores it in
+`localStorage` and sends it as `Authorization: Bearer …` on every request.
+
+Pages:
+
+- **Dashboard** — subscriber/campaign/event totals, last-7-day rollup.
+- **Subscribers** — paginated search, add/unsubscribe, CSV import.
+- **Campaigns** — list and per-campaign drill-down with stacked event chart and per-recipient `sends` table.
+- **Bounces** — last 7 days, status code colour-coded.
+
+Build the SPA before deploying the admin worker:
+
+```bash
+cd web && npm install            # one-time
+cd ..
+npm run deploy:admin             # builds web/ then wrangler deploy
+```
+
+During development, run `cd web && npm run dev` (Vite proxies `/api/*` to
+`localhost:8787`, so run `wrangler dev` in `workers/admin/` in parallel).
 
 ## Prerequisites
 
