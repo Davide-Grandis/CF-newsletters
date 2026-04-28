@@ -9,7 +9,7 @@ Targets:
 - **Inbound newsletter address**: `newsletter@eneanewsletter.it`
 - **VERP bounce pattern**: `bounce+*@eneanewsletter.it`
 - **Tracker hostname**: `track.eneanewsletter.it`
-- **Authorized author**: `davideg@cloudflare.com`
+- **Initial authorized author**: `davideg@cloudflare.com` (further authors are added through the admin GUI's *Authors* page or `POST /api/authors` — there is no `ALLOWED_AUTHORS` env var anymore)
 
 ## 0. Prerequisites
 
@@ -63,13 +63,21 @@ Apply schema:
 npx wrangler d1 execute newsletter_db --remote --file=db/schema.sql
 ```
 
-Seed the first author so the ingest worker will accept your inbound mail
-(every additional author can be added later via the admin GUI's *Authors*
-page or `POST /api/authors`):
+Seed the first author. The ingest worker reads its allow-list from the
+`authors` D1 table on every inbound email; if the table is empty the
+worker rejects every message with `Sender not authorized`. Bootstrap one
+row now via SQL — the rest can be managed from the GUI's *Authors* page
+or via `POST /api/authors` once the admin worker is deployed.
 
 ```bash
 npx wrangler d1 execute newsletter_db --remote \
   --command "INSERT INTO authors (email, name) VALUES ('davideg@cloudflare.com', 'Davide Grandis');"
+```
+
+Verify:
+
+```bash
+npx wrangler d1 execute newsletter_db --remote --command "SELECT * FROM authors;"
 ```
 
 ### 1.2 Queues
@@ -226,22 +234,34 @@ button hits `/cdn-cgi/access/logout`.
 ## 9. Smoke test
 
 ```bash
-# 9.1 Add a subscriber via the admin API.
 ADMIN_URL=https://newsletter-admin.<your-subdomain>.workers.dev
 TOKEN=<paste ADMIN_TOKEN>
 
+# 9.1 Confirm the seeded author is present (or add another via the admin API).
+curl -s "$ADMIN_URL/api/authors" -H "Authorization: Bearer $TOKEN"
+
+curl -X POST "$ADMIN_URL/api/authors" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"davideg@cloudflare.com","name":"Davide"}'
+
+# 9.2 Add a subscriber so the test campaign has someone to send to.
 curl -X POST "$ADMIN_URL/api/subscribers" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"email":"davideg@cloudflare.com","name":"Davide"}'
 
-# 9.2 Send a test newsletter to ingest.
+# 9.3 Send a test newsletter to ingest, FROM the authorized author address.
 echo "Hello world" | mail -s "Test campaign" newsletter@eneanewsletter.it
 
-# 9.3 Watch logs.
+# 9.4 Watch logs.
 npx wrangler tail newsletter-ingest
 npx wrangler tail newsletter-consumer
 ```
+
+If ingest logs `Sender not authorized`, the inbound `From:` doesn't match
+any row in the `authors` table — add it via the GUI's *Authors* page or
+`POST /api/authors`.
 
 You should see: ingest parses → consumer picks up the queue batch → SEND_EMAIL
 delivers → the test subscriber receives the message with tracking pixel,
