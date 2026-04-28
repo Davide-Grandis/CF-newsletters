@@ -14,7 +14,7 @@ WARMUP_LATE_START_WEEK = "5"
 [[d1_databases]]
 binding = "DB"
 database_name = "newsletter_db"
-database_id = "REPLACE_WITH_D1_ID"
+database_id = "c6995e6a-216d-4ed2-9390-1fc36fb51f1b"
 
 # Static SPA built from /web is emitted to ./public by `npm run build:web`.
 [assets]
