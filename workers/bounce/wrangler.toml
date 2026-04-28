@@ -17,4 +17,4 @@ binding = "ARCHIVE"
 bucket_name = "newsletter-archive"
 
 # Email Routing rule:
-#   bounce+*@yourdomain.com  -> Worker `newsletter-bounce`
+#   bounce+*@eneanewsletter.it  -> Worker `newsletter-bounce`

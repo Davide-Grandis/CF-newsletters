@@ -4,9 +4,9 @@ compatibility_date = "2025-01-15"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-FROM_ADDRESS = "Newsletter <newsletter@yourdomain.com>"
-TRACKING_BASE_URL = "https://track.yourdomain.com"
-BOUNCE_DOMAIN = "yourdomain.com"
+FROM_ADDRESS = "Newsletter <newsletter@eneanewsletter.it>"
+TRACKING_BASE_URL = "https://track.eneanewsletter.it"
+BOUNCE_DOMAIN = "eneanewsletter.it"
 MAX_RAW_BYTES = "39000000"   # ~40 MB safety cap
 
 # Warmup schedule. Leave WARMUP_START_DATE empty to disable caps entirely.
