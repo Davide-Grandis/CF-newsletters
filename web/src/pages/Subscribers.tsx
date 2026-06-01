@@ -172,10 +172,10 @@ export default function Subscribers({ newsletterId }: { newsletterId: string }) 
         <table className="w-full table-fixed text-sm">
           <thead className="bg-slate-50 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
             <tr>
-              <Th label="Email" sortKey="email" sort={sort} onSort={toggleSort} className="w-[26%]" />
-              <Th label="Name" sortKey="name" sort={sort} onSort={toggleSort} className="w-[22%]" />
-              <Th label="Status" sortKey="status" sort={sort} onSort={toggleSort} className="w-[13%]" />
-              <Th label="Verified" sortKey="verified" sort={sort} onSort={toggleSort} className="w-[11%]" />
+              <Th label="Email" sortKey="email" sort={sort} onSort={toggleSort} className="w-[30%]" />
+              <Th label="Name" sortKey="name" sort={sort} onSort={toggleSort} className="w-[26%]" />
+              <Th label="Status" sortKey="status" sort={sort} onSort={toggleSort} className="w-[9%]" />
+              <Th label="Verified" sortKey="verified" sort={sort} onSort={toggleSort} className="w-[8%]" />
               <Th label="Bounces" sortKey="bounce_count" sort={sort} onSort={toggleSort} align="right" className="w-[9%]" />
               <Th label="Date subscribed" sortKey="subscribed_at" sort={sort} onSort={toggleSort} className="w-[13%]" />
               <th className="p-2 w-[6%]"></th>
