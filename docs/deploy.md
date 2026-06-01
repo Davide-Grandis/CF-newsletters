@@ -57,28 +57,16 @@ npx wrangler d1 create newsletter_db
 # database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 ```
 
-Apply schema:
+Apply the schema (one-shot bootstrap — required so the admin worker has
+tables to talk to):
 
 ```bash
 npx wrangler d1 execute newsletter_db --remote --file=db/schema.sql
 ```
 
-Seed the first author. The ingest worker reads its allow-list from the
-`authors` D1 table on every inbound email; if the table is empty the
-worker rejects every message with `Sender not authorized`. Bootstrap one
-row now via SQL — the rest can be managed from the GUI's *Authors* page
-or via `POST /api/authors` once the admin worker is deployed.
-
-```bash
-npx wrangler d1 execute newsletter_db --remote \
-  --command "INSERT INTO authors (email, name) VALUES ('davideg@cloudflare.com', 'Davide Grandis');"
-```
-
-Verify:
-
-```bash
-npx wrangler d1 execute newsletter_db --remote --command "SELECT * FROM authors;"
-```
+Everything else (seeding the first author, adding subscribers, etc.) is
+done through the admin GUI once it is deployed and gated by Access — see
+section 9.1.
 
 ### 1.2 Queues
 
@@ -130,13 +118,10 @@ These steps are dashboard-only; wrangler can't drive them.
 
 ### 3.3 DNS for the tracker
 
-Add a proxied (orange-cloud) record so we can route to the tracker worker:
-
-```
-A    track.eneanewsletter.it    192.0.2.1    (proxied)
-```
-
-(The IP doesn't matter — proxy mode short-circuits to the worker.)
+**Skip this — the tracker's `custom_domain = true` route creates the DNS
+record automatically when step 7 deploys.** Manually adding an A or CNAME
+for `track.eneanewsletter.it` will cause `wrangler deploy` to fail with
+"Hostname already has externally managed DNS records".
 
 ## 4. Set worker secrets
 
@@ -150,15 +135,14 @@ for w in tracker consumer; do
     npx wrangler secret put ATTACHMENT_SIGNING_KEY)
 done
 
-# Admin token (used by the GUI bearer-auth flow)
-(cd workers/admin && npx wrangler secret put ADMIN_TOKEN)
+# The admin worker has no secret — it is gated by Cloudflare Access.
+# See section 8 below.
 ```
 
 Generate strong values with:
 
 ```bash
 openssl rand -base64 48      # for *_SIGNING_KEY
-openssl rand -hex 32         # for ADMIN_TOKEN
 ```
 
 The two signing keys MUST be identical between the consumer (which signs)
@@ -217,11 +201,12 @@ Then redeploy:
 (cd workers/tracker && npx wrangler deploy)
 ```
 
-## 8. (Optional) Put the admin GUI behind Cloudflare Access
+## 8. Put the admin GUI behind Cloudflare Access (REQUIRED)
 
-Recommended — the GUI's only baseline auth is a bearer token in
-localStorage. With Access in front you also get SSO + identity headers
-that the GUI surfaces (the `/api/me` endpoint).
+The admin worker has **no built-in authentication**. It only checks for
+the `Cf-Access-Authenticated-User-Email` header that Cloudflare Access
+injects after a successful login. Without an Access application in front
+the API will return `401` on every `/api/*` call.
 
 1. Zero Trust → **Access** → **Applications** → Add → Self-hosted.
 2. Application domain: the admin worker's URL.
@@ -233,28 +218,29 @@ button hits `/cdn-cgi/access/logout`.
 
 ## 9. Smoke test
 
+### 9.1 Bootstrap data via the admin GUI
+
+Open the admin URL in a browser (Access will prompt for SSO):
+
+```
+https://newsletter-admin.<your-subdomain>.workers.dev/
+```
+
+Then, using the GUI:
+
+1. **Authors** page → add `davideg@cloudflare.com` (or whichever address
+   you'll send the test from). The ingest worker rejects every inbound
+   email until at least one row exists here.
+2. **Subscribers** page → add at least one subscriber so the test
+   campaign has somewhere to deliver.
+
+### 9.2 Trigger an end-to-end send
+
 ```bash
-ADMIN_URL=https://newsletter-admin.<your-subdomain>.workers.dev
-TOKEN=<paste ADMIN_TOKEN>
-
-# 9.1 Confirm the seeded author is present (or add another via the admin API).
-curl -s "$ADMIN_URL/api/authors" -H "Authorization: Bearer $TOKEN"
-
-curl -X POST "$ADMIN_URL/api/authors" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"davideg@cloudflare.com","name":"Davide"}'
-
-# 9.2 Add a subscriber so the test campaign has someone to send to.
-curl -X POST "$ADMIN_URL/api/subscribers" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"davideg@cloudflare.com","name":"Davide"}'
-
-# 9.3 Send a test newsletter to ingest, FROM the authorized author address.
+# Send a test newsletter to ingest, FROM the authorized author address.
 echo "Hello world" | mail -s "Test campaign" newsletter@eneanewsletter.it
 
-# 9.4 Watch logs.
+# Watch logs.
 npx wrangler tail newsletter-ingest
 npx wrangler tail newsletter-consumer
 ```

@@ -32,17 +32,21 @@ docs/workers.md            # per-worker deep dives
 
 ## Admin GUI
 
-The `admin` worker exposes a JSON API under `/api/*` (bearer-token auth via
-`ADMIN_TOKEN`) and serves a Vite + React SPA from the same origin via the
-`[assets]` binding. Sign in by pasting the token; the SPA stores it in
-`localStorage` and sends it as `Authorization: Bearer …` on every request.
+The `admin` worker exposes a JSON API under `/api/*` and serves a Vite +
+React SPA from the same origin via the `[assets]` binding. Authentication
+is delegated entirely to **Cloudflare Access**: deploy the worker behind
+an Access application and the SPA picks up the user's identity from the
+`Cf-Access-Authenticated-User-Email` header that the edge injects. The
+worker rejects any `/api/*` request that is missing that header. There is
+no shared bearer token.
 
 Pages:
 
-- **Dashboard** — subscriber/campaign/event totals, last-7-day rollup.
+- **Dashboard** — subscriber/campaign/event totals, warmup quota, last-7-day rollup.
 - **Subscribers** — paginated search, add/unsubscribe, CSV import.
 - **Campaigns** — list and per-campaign drill-down with stacked event chart and per-recipient `sends` table.
 - **Bounces** — last 7 days, status code colour-coded.
+- **Authors** — manage the allow-list of inbound newsletter senders.
 
 Build the SPA before deploying the admin worker:
 
@@ -87,7 +91,7 @@ Update each `workers/*/wrangler.toml` with the IDs that come back, then:
 # Secrets
 wrangler secret put LINK_SIGNING_KEY        --name tracker
 wrangler secret put ATTACHMENT_SIGNING_KEY  --name tracker
-wrangler secret put ADMIN_TOKEN             --name admin
+# (the admin worker has no secret — protect it with Cloudflare Access)
 ```
 
 ## Deploy
@@ -259,7 +263,7 @@ newsletter/
 
 ## 8. Configuration (vars / secrets)
 - Vars: `FROM_ADDRESS`, `TRACKING_BASE_URL`, `BOUNCE_DOMAIN`, `BATCH_SIZE`, `MAX_ATTACHMENT_BYTES`, `MAX_TOTAL_ATTACHMENT_BYTES`, `MAX_ATTACHMENT_COUNT`, `ALLOWED_MIME`, `BLOCKED_EXTENSIONS`, `ATTACHMENT_LINK_THRESHOLD_BYTES`, `MAX_RAW_BYTES`, `RETENTION_DAYS`, `HARD_BOUNCE_THRESHOLD`, `SOFT_BOUNCE_THRESHOLD`.
-- Secrets (`wrangler secret put`): `LINK_SIGNING_KEY`, `ATTACHMENT_SIGNING_KEY`, `ADMIN_TOKEN`.
+- Secrets (`wrangler secret put`): `LINK_SIGNING_KEY`, `ATTACHMENT_SIGNING_KEY`. The admin worker has no secret — front it with a Cloudflare Access application.
 
 ## 9. Key Flows
 

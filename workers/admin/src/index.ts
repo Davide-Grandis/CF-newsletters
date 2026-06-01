@@ -1,15 +1,25 @@
 // Admin Worker
 //
 // Serves a static SPA from the [assets] binding for the GUI, and exposes a
-// bearer-token-authenticated JSON API under /api/* for it (and curl/scripts)
-// to call. Anything that is not /api/* falls through to the static assets.
+// JSON API under /api/* for it (and curl/scripts) to call. Anything that is
+// not /api/* falls through to the static assets.
+//
+// Authentication: this worker MUST be deployed behind a Cloudflare Access
+// application. Access authenticates the user at the edge and injects the
+// `Cf-Access-Authenticated-User-Email` header on every request that reaches
+// the worker. We treat the presence of that header as proof of authentication;
+// requests without it are rejected with 401. No bearer token, no shared
+// secret — Access is the only gate.
 
 import { readWarmupConfig, currentWindow } from '../../../shared/warmup';
 
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
-  ADMIN_TOKEN: string;
+  // R2 bucket holding GUI media (logos, header images). Served read-only
+  // under /media/*. The whole worker sits behind Cloudflare Access, so
+  // these objects are only reachable by authenticated operators.
+  ASSETS_R2: R2Bucket;
   // Warmup vars — kept in sync with the consumer worker so the admin GUI can
   // show the current daily/weekly caps and how much has been used.
   WARMUP_START_DATE?: string;
@@ -49,10 +59,20 @@ export default {
     }
 
     if (url.pathname.startsWith('/api/')) {
-      if (req.headers.get('authorization') !== `Bearer ${env.ADMIN_TOKEN}`) {
+      // Cloudflare Access injects this header at the edge after authenticating
+      // the user. If it is missing the request did not transit Access, so we
+      // refuse to serve API data.
+      if (!req.headers.get('cf-access-authenticated-user-email')) {
         return Response.json({ error: 'unauthorized' }, { status: 401 });
       }
       return await handleApi(req, env, url);
+    }
+
+    // GUI media served from the R2 bucket (logos, header images). Uses /media/
+    // rather than /assets/ to avoid colliding with the Vite-built SPA bundle
+    // that lives under /assets/.
+    if (req.method === 'GET' && url.pathname.startsWith('/media/')) {
+      return await serveMedia(req, env, url);
     }
 
     // SPA static assets (with SPA fallback configured in wrangler.toml).
@@ -389,6 +409,51 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
   }
 
   return Response.json({ error: 'not found' }, { status: 404 });
+}
+
+async function serveMedia(req: Request, env: Env, url: URL): Promise<Response> {
+  const key = decodeURIComponent(url.pathname.slice('/media/'.length));
+  if (!key || key.includes('..')) {
+    return new Response('not found', { status: 404 });
+  }
+  const obj = await env.ASSETS_R2.get(key);
+  if (!obj) return new Response('not found', { status: 404 });
+
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  headers.set('etag', obj.httpEtag);
+  // GUI media is small and rarely changes; let the browser cache it.
+  headers.set('cache-control', 'public, max-age=3600');
+  if (!headers.has('content-type')) {
+    headers.set('content-type', guessContentType(key));
+  }
+
+  // Honour conditional requests so repeat loads are cheap.
+  if (req.headers.get('if-none-match') === obj.httpEtag) {
+    return new Response(null, { status: 304, headers });
+  }
+  return new Response(obj.body, { headers });
+}
+
+function guessContentType(key: string): string {
+  const ext = key.slice(key.lastIndexOf('.') + 1).toLowerCase();
+  switch (ext) {
+    case 'png':
+      return 'image/png';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'gif':
+      return 'image/gif';
+    case 'webp':
+      return 'image/webp';
+    case 'svg':
+      return 'image/svg+xml';
+    case 'ico':
+      return 'image/x-icon';
+    default:
+      return 'application/octet-stream';
+  }
 }
 
 function clamp(n: number, lo: number, hi: number): number {

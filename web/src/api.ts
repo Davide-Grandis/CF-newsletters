@@ -1,8 +1,10 @@
-// Tiny API client. The bearer token is provided by the AuthProvider via the
-// hook below; for one-off calls (e.g. the login probe) callers can pass it in.
+// Tiny API client. Authentication is handled entirely by Cloudflare Access at
+// the edge: the browser presents the Access cookie automatically (same origin
+// as the SPA), and the worker rejects any request that does not carry the
+// `Cf-Access-Authenticated-User-Email` header that Access injects after a
+// successful login. No bearer token is involved.
 
 export async function api<T = unknown>(
-  token: string,
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
@@ -11,7 +13,6 @@ export async function api<T = unknown>(
     headers: {
       'Content-Type': 'application/json',
       ...(init.headers ?? {}),
-      Authorization: `Bearer ${token}`,
     },
   });
   if (res.status === 401) throw new ApiError('unauthorized', 401);

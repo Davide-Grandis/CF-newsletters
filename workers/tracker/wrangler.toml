@@ -3,8 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2025-01-15"
 
 # Custom-domain route for the tracker (pixel, click, unsubscribe, attachment download).
-# Uncomment after you've added `track` as a custom hostname or proxied DNS record.
-# routes = [{ pattern = "track.eneanewsletter.it/*", custom_domain = true }]
+routes = [{ pattern = "track.eneanewsletter.it", custom_domain = true }]
 
 [[d1_databases]]
 binding = "DB"

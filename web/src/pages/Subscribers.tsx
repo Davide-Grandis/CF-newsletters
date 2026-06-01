@@ -1,10 +1,8 @@
 import { FormEvent, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, Page, Subscriber } from '../api';
-import { useAuth } from '../auth';
 
 export default function Subscribers() {
-  const { token } = useAuth();
   const qc = useQueryClient();
   const [status, setStatus] = useState('');
   const [q, setQ] = useState('');
@@ -16,25 +14,25 @@ export default function Subscribers() {
       const sp = new URLSearchParams({ limit: '50', cursor: String(cursor) });
       if (status) sp.set('status', status);
       if (q) sp.set('q', q);
-      return api<Page<Subscriber>>(token!, `/api/subscribers?${sp.toString()}`);
+      return api<Page<Subscriber>>(`/api/subscribers?${sp.toString()}`);
     },
   });
 
   const add = useMutation({
     mutationFn: (vars: { email: string; name?: string }) =>
-      api(token!, '/api/subscribers', { method: 'POST', body: JSON.stringify(vars) }),
+      api('/api/subscribers', { method: 'POST', body: JSON.stringify(vars) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['subs'] }),
   });
 
   const remove = useMutation({
-    mutationFn: (id: number) => api(token!, `/api/subscribers/${id}`, { method: 'DELETE' }),
+    mutationFn: (id: number) => api(`/api/subscribers/${id}`, { method: 'DELETE' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['subs'] }),
   });
 
   const upload = useMutation({
     mutationFn: async (file: File) => {
       const text = await file.text();
-      return api<{ inserted: number }>(token!, '/api/subscribers/import', {
+      return api<{ inserted: number }>('/api/subscribers/import', {
         method: 'POST',
         body: JSON.stringify({ csv: text }),
       });
@@ -56,7 +54,7 @@ export default function Subscribers() {
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <h1 className="text-xl font-semibold">Subscribers</h1>
-        <label className="ml-auto text-sm cursor-pointer bg-white border rounded px-3 py-1.5 hover:bg-slate-50">
+        <label className="ml-auto text-sm cursor-pointer bg-white border border-slate-200 rounded px-3 py-1.5 hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800">
           Import CSV
           <input
             type="file"
@@ -74,14 +72,14 @@ export default function Subscribers() {
         <div className="text-xs text-emerald-700">Imported {upload.data.inserted} rows.</div>
       )}
 
-      <form onSubmit={onAdd} className="bg-white border rounded p-3 flex gap-2">
-        <input name="email" type="email" required placeholder="email@example.com" className="border rounded px-2 py-1 text-sm flex-1" />
-        <input name="name" placeholder="name (optional)" className="border rounded px-2 py-1 text-sm w-48" />
-        <button className="bg-slate-900 text-white text-sm rounded px-3 py-1">Add</button>
+      <form onSubmit={onAdd} className="bg-white border border-slate-200 rounded p-3 flex gap-2 dark:bg-slate-900 dark:border-slate-800">
+        <input name="email" type="email" required placeholder="email@example.com" className={inputCls + ' flex-1'} />
+        <input name="name" placeholder="name (optional)" className={inputCls + ' w-48'} />
+        <button className="bg-slate-900 text-white text-sm rounded px-3 py-1 dark:bg-slate-100 dark:text-slate-900">Add</button>
       </form>
 
       <div className="flex gap-2">
-        <select value={status} onChange={(e) => { setStatus(e.target.value); setCursor(0); }} className="border rounded px-2 py-1 text-sm">
+        <select value={status} onChange={(e) => { setStatus(e.target.value); setCursor(0); }} className={inputCls}>
           <option value="">All statuses</option>
           <option value="active">Active</option>
           <option value="unsubscribed">Unsubscribed</option>
@@ -92,13 +90,13 @@ export default function Subscribers() {
           value={q}
           onChange={(e) => { setQ(e.target.value); setCursor(0); }}
           placeholder="Search email or name"
-          className="border rounded px-2 py-1 text-sm flex-1"
+          className={inputCls + ' flex-1'}
         />
       </div>
 
-      <div className="bg-white border rounded overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded overflow-hidden dark:bg-slate-900 dark:border-slate-800">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-600">
+          <thead className="bg-slate-50 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
             <tr>
               <th className="text-left p-2">Email</th>
               <th className="text-left p-2">Name</th>
@@ -110,14 +108,14 @@ export default function Subscribers() {
           </thead>
           <tbody>
             {list.data?.items.map((s) => (
-              <tr key={s.id} className="border-t">
+              <tr key={s.id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="p-2 font-mono text-xs">{s.email}</td>
                 <td className="p-2">{s.name ?? '—'}</td>
                 <td className="p-2">
                   <StatusPill status={s.status} />
                 </td>
                 <td className="p-2 text-right">{s.bounce_count}</td>
-                <td className="p-2 text-slate-500">{s.subscribed_at}</td>
+                <td className="p-2 text-slate-500 dark:text-slate-400">{s.subscribed_at}</td>
                 <td className="p-2 text-right">
                   <button
                     onClick={() => remove.mutate(s.id)}
@@ -129,7 +127,7 @@ export default function Subscribers() {
               </tr>
             ))}
             {list.data && list.data.items.length === 0 && (
-              <tr><td colSpan={6} className="p-4 text-center text-slate-500">No results.</td></tr>
+              <tr><td colSpan={6} className="p-4 text-center text-slate-500 dark:text-slate-400">No results.</td></tr>
             )}
           </tbody>
         </table>
@@ -139,27 +137,33 @@ export default function Subscribers() {
         <button
           onClick={() => setCursor(0)}
           disabled={cursor === 0}
-          className="border rounded px-3 py-1 disabled:opacity-40"
+          className={pagerCls}
         >First</button>
         <button
           onClick={() => list.data?.nextCursor && setCursor(Number(list.data.nextCursor))}
           disabled={!list.data?.nextCursor}
-          className="border rounded px-3 py-1 disabled:opacity-40"
+          className={pagerCls}
         >Next →</button>
       </div>
     </div>
   );
 }
 
+const inputCls =
+  'border border-slate-300 rounded px-2 py-1 text-sm bg-white text-slate-900 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100';
+
+const pagerCls =
+  'border border-slate-200 rounded px-3 py-1 disabled:opacity-40 dark:border-slate-700';
+
 export function StatusPill({ status }: { status: string }) {
   const cls: Record<string, string> = {
-    active: 'bg-emerald-100 text-emerald-800',
-    unsubscribed: 'bg-slate-100 text-slate-700',
-    bounced: 'bg-amber-100 text-amber-800',
-    complained: 'bg-red-100 text-red-800',
+    active: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+    unsubscribed: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200',
+    bounced: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+    complained: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300',
   };
   return (
-    <span className={`text-xs px-2 py-0.5 rounded ${cls[status] ?? 'bg-slate-100 text-slate-700'}`}>
+    <span className={`text-xs px-2 py-0.5 rounded ${cls[status] ?? 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200'}`}>
       {status}
     </span>
   );

@@ -1,27 +1,24 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+// Authentication is performed by Cloudflare Access at the edge. This module
+// only provides a thin hook that exposes the Access identity returned by
+// `/api/me` (and a logout helper that ends the Access session).
 
-interface AuthCtx {
-  token: string | null;
-  setToken: (t: string | null) => void;
-  logout: () => void;
+import { useQuery } from '@tanstack/react-query';
+
+export interface Identity {
+  email: string | null;
+  name: string | null;
+  protected_by_access: boolean;
 }
 
-const Ctx = createContext<AuthCtx | null>(null);
-const STORAGE_KEY = 'admin_token';
-
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setTokenState] = useState<string | null>(() => localStorage.getItem(STORAGE_KEY));
-  const setToken = useCallback((t: string | null) => {
-    if (t) localStorage.setItem(STORAGE_KEY, t);
-    else localStorage.removeItem(STORAGE_KEY);
-    setTokenState(t);
-  }, []);
-  const logout = useCallback(() => setToken(null), [setToken]);
-  return <Ctx.Provider value={{ token, setToken, logout }}>{children}</Ctx.Provider>;
+export function useIdentity() {
+  return useQuery({
+    queryKey: ['me'],
+    queryFn: () => fetch('/api/me').then((r) => r.json() as Promise<Identity>),
+    staleTime: 5 * 60_000,
+  });
 }
 
-export function useAuth(): AuthCtx {
-  const v = useContext(Ctx);
-  if (!v) throw new Error('useAuth outside provider');
-  return v;
+export function logoutAccess() {
+  // Ends the Cloudflare Access session and redirects back to the app login.
+  window.location.href = '/cdn-cgi/access/logout';
 }

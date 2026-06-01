@@ -238,7 +238,7 @@ returns the appropriate response (image, redirect, file, or HTML page).
 Click and download URLs carry an HMAC over the tuple
 `(kind | campaignId | subscriberId | target)` using `LINK_SIGNING_KEY` or
 `ATTACHMENT_SIGNING_KEY` respectively. The tracker recomputes the HMAC
-and compares with constant-time-ish equality (`@/Users/davideg/CascadeProjects/newsletter/shared/tracking.ts:18-24`).
+and compares with constant-time-ish equality (`shared/tracking.ts:18-24`).
 
 Why HMAC instead of just an opaque ID? Two reasons:
 1. **Stateless**: no DB lookup needed to validate a URL — the worker can
@@ -401,21 +401,25 @@ for (const c of expired) {
 
 ### Purpose
 
-Operator interface. A bearer-token-authenticated HTTP API for managing
-subscribers and inspecting campaign state. It deliberately doesn't have a
-UI — front it with a static page or a CLI; this worker is just the data
-plane.
+Operator interface. Serves the React SPA from the `[assets]` binding and
+exposes a JSON API under `/api/*` for managing subscribers, authors,
+campaigns and warmup quota.
 
 ### Authentication
 
+The worker has **no built-in auth**. It must be deployed behind a
+Cloudflare Access application; Access authenticates the user at the edge
+and adds the `Cf-Access-Authenticated-User-Email` header on every
+request that reaches the worker. The handler simply checks that the
+header is present:
+
 ```ts
-if (req.headers.get('authorization') !== `Bearer ${env.ADMIN_TOKEN}`)
-  return new Response('unauthorized', { status: 401 });
+if (!req.headers.get('cf-access-authenticated-user-email'))
+  return Response.json({ error: 'unauthorized' }, { status: 401 });
 ```
 
-`ADMIN_TOKEN` is set with `wrangler secret put`. Single shared secret —
-fine for a one-author newsletter; would need per-user tokens or OAuth for
-a team.
+`/api/me` reflects the Access identity back to the SPA so the header can
+display the signed-in user's name.
 
 ### Endpoints
 

@@ -1,20 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { api, Overview, Quota } from '../api';
-import { useAuth } from '../auth';
 
 export default function Dashboard() {
-  const { token } = useAuth();
   const { data, isLoading, error } = useQuery({
     queryKey: ['overview'],
-    queryFn: () => api<Overview>(token!, '/api/stats/overview'),
+    queryFn: () => api<Overview>('/api/stats/overview'),
   });
   const quota = useQuery({
     queryKey: ['quota'],
-    queryFn: () => api<Quota>(token!, '/api/quota'),
+    queryFn: () => api<Quota>('/api/quota'),
     refetchInterval: 60_000,
   });
 
-  if (isLoading) return <div className="text-sm text-slate-500">Loading…</div>;
+  if (isLoading) return <div className="text-sm text-slate-500 dark:text-slate-400">Loading…</div>;
   if (error) return <div className="text-sm text-red-600">{(error as Error).message}</div>;
   if (!data) return null;
 
@@ -48,9 +46,9 @@ export default function Dashboard() {
 function QuotaPanel({ q }: { q: Quota }) {
   if (!q.enabled) {
     return (
-      <div className="bg-white rounded-lg border p-4 text-sm text-slate-600">
-        <span className="font-medium text-slate-900">Warmup</span> disabled — set{' '}
-        <code className="bg-slate-100 px-1 rounded text-xs">WARMUP_START_DATE</code> on
+      <div className="bg-white rounded-lg border border-slate-200 p-4 text-sm text-slate-600 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">
+        <span className="font-medium text-slate-900 dark:text-slate-100">Warmup</span> disabled — set{' '}
+        <code className="bg-slate-100 px-1 rounded text-xs dark:bg-slate-800">WARMUP_START_DATE</code> on
         the consumer worker to enable daily/weekly send caps. Steady-state target:{' '}
         <strong>{q.target.toLocaleString()}/week</strong>.
       </div>
@@ -60,7 +58,7 @@ function QuotaPanel({ q }: { q: Quota }) {
     <section>
       <h2 className="text-base font-medium mb-2">
         Warmup quota{' '}
-        <span className="ml-1 text-xs text-slate-500 font-normal">
+        <span className="ml-1 text-xs text-slate-500 font-normal dark:text-slate-400">
           (week {q.weekIndex})
         </span>
       </h2>
@@ -86,25 +84,25 @@ function QuotaBar({ label, used, cap, subtitle }: { label: string; used: number;
   const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
   const tone = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
   return (
-    <div className="bg-white rounded-lg border p-4">
+    <div className="bg-white rounded-lg border border-slate-200 p-4 dark:bg-slate-900 dark:border-slate-800">
       <div className="flex items-baseline justify-between">
-        <span className="text-xs uppercase tracking-wide text-slate-500">{label}</span>
+        <span className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</span>
         <span className="text-sm font-medium">
           {used.toLocaleString()} / {cap.toLocaleString()}
         </span>
       </div>
-      <div className="h-2 bg-slate-100 rounded mt-2 overflow-hidden">
+      <div className="h-2 bg-slate-100 rounded mt-2 overflow-hidden dark:bg-slate-800">
         <div className={`h-full ${tone}`} style={{ width: `${pct}%` }} />
       </div>
-      <div className="text-xs text-slate-500 mt-1">{subtitle}</div>
+      <div className="text-xs text-slate-500 mt-1 dark:text-slate-400">{subtitle}</div>
     </div>
   );
 }
 
 function Card({ label, value }: { label: string; value: number }) {
   return (
-    <div className="bg-white rounded-lg shadow-sm border p-4">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+    <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 dark:bg-slate-900 dark:border-slate-800">
+      <div className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</div>
       <div className="text-2xl font-semibold mt-1">{value.toLocaleString()}</div>
     </div>
   );

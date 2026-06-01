@@ -21,6 +21,14 @@ binding = "DB"
 database_name = "newsletter_db"
 database_id = "c6995e6a-216d-4ed2-9390-1fc36fb51f1b"
 
+# R2 bucket for static assets (logos, header images, etc.) served by the
+# admin GUI. Created in the EU jurisdiction, so the jurisdiction must be
+# declared here or the binding won't resolve.
+[[r2_buckets]]
+binding = "ASSETS_R2"
+bucket_name = "newsletter-admin"
+jurisdiction = "eu"
+
 # Static SPA built from /web is emitted to ./public by `npm run build:web`.
 [assets]
 directory = "./public"

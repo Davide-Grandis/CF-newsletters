@@ -54,18 +54,13 @@ done
 grep database_id workers/*/wrangler.toml
 ```
 
-## 5. Apply schema and seed the first author
+## 5. Apply schema
+
+One-shot bootstrap so the workers have tables to talk to. Authors,
+subscribers, etc. are then managed through the admin GUI (step 12).
 
 ```bash
 npx wrangler d1 execute newsletter_db --remote --file=db/schema.sql
-```
-
-Authors are managed in D1 (replaces the old `ALLOWED_AUTHORS` env var).
-Seed at least one row so the ingest worker accepts the first inbound mail:
-
-```bash
-npx wrangler d1 execute newsletter_db --remote \
-  --command "INSERT INTO authors (email, name) VALUES ('davideg@cloudflare.com', 'Davide Grandis');"
 ```
 
 ## 6. Set secrets
@@ -77,12 +72,11 @@ NOT turbo — interactive prompts.
 (cd workers/tracker  && npx wrangler secret put ATTACHMENT_SIGNING_KEY)
 (cd workers/consumer && npx wrangler secret put LINK_SIGNING_KEY)
 (cd workers/consumer && npx wrangler secret put ATTACHMENT_SIGNING_KEY)
-(cd workers/admin    && npx wrangler secret put ADMIN_TOKEN)
+# admin worker has no secret — protected by Cloudflare Access (step 11).
 ```
 
 The two signing keys must be identical between consumer and tracker.
-Generate values with `openssl rand -base64 48` (signing) and
-`openssl rand -hex 32` (admin token).
+Generate values with `openssl rand -base64 48`.
 
 ## 7. Configure Email Routing + Email Sending in the dashboard
 
@@ -90,7 +84,7 @@ This step is manual. Direct the user to:
 
 - Dashboard → eneanewsletter.it → Email → enable Email Routing
 - Same panel → Email Sending → enable, add the DKIM TXT record
-- Add a proxied DNS record `track.eneanewsletter.it`
+- Do NOT add a manual DNS record for `track.eneanewsletter.it` — the tracker's `custom_domain = true` route creates one on first deploy. Adding one manually causes "Hostname already has externally managed DNS records".
 - (Defer the Email Routing rules to step 9, after workers exist.)
 
 ## 8. Build SPA and deploy all workers
@@ -124,7 +118,27 @@ Then redeploy:
 (cd workers/tracker && npx wrangler deploy)
 ```
 
-## 11. Smoke test
+## 11. Put admin GUI behind Cloudflare Access (REQUIRED)
+
+Manual. Zero Trust dashboard:
+
+1. Access → Applications → Add → Self-hosted.
+2. Application domain = the admin worker's `*.workers.dev` URL.
+3. Identity provider: Google (or whatever the user prefers).
+4. Policy: Allow `Emails: davideg@cloudflare.com` (or a Google group).
+
+Without this, every `/api/*` call returns 401 — the admin worker has no
+fallback authentication.
+
+## 12. Bootstrap data via the admin GUI
+
+Open the admin worker URL in a browser (Access prompts for SSO), then:
+
+1. **Authors** page → add `davideg@cloudflare.com`. Inbound emails are
+   rejected until at least one row exists in this table.
+2. **Subscribers** page → add at least one test recipient.
+
+## 13. Smoke test
 
 ```bash
 npx wrangler tail newsletter-ingest
