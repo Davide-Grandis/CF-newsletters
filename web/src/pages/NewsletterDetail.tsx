@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, Newsletter } from '../api';
 import Subscribers from './Subscribers';
 import Authors from './Authors';
-import { Toggle } from './Newsletters';
 
 type Tab = 'subscribers' | 'authors';
 
 export default function NewsletterDetail() {
   const { id = '' } = useParams();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('subscribers');
   const [warn, setWarn] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [delErr, setDelErr] = useState<string | null>(null);
 
   const detail = useQuery({
     queryKey: ['newsletter', id],
@@ -29,6 +31,15 @@ export default function NewsletterDetail() {
     },
   });
 
+  const del = useMutation({
+    mutationFn: () => api(`/api/newsletters/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['newsletters'] });
+      navigate('/newsletters');
+    },
+    onError: (e) => setDelErr((e as Error).message),
+  });
+
   if (detail.isLoading) return <div className="text-sm text-slate-500 dark:text-slate-400">Loading…</div>;
   if (detail.error) return <div className="text-sm text-red-600">{(detail.error as Error).message}</div>;
   if (!detail.data) return null;
@@ -38,13 +49,7 @@ export default function NewsletterDetail() {
     <div className="space-y-6">
       <div>
         <Link to="/newsletters" className="text-sm text-slate-500 hover:underline dark:text-slate-400">← Newsletters</Link>
-        <div className="flex items-center gap-3 mt-1">
-          <h1 className="text-xl font-semibold">{n.name}</h1>
-          <span className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-            {n.enabled === 1 ? 'Enabled' : 'Disabled'}
-            <Toggle on={n.enabled === 1} busy={patch.isPending} onChange={(enabled) => patch.mutate({ enabled })} />
-          </span>
-        </div>
+        <h1 className="text-xl font-semibold mt-1">{n.name}</h1>
       </div>
 
       {warn && (
@@ -54,7 +59,46 @@ export default function NewsletterDetail() {
         </div>
       )}
 
-      <Settings n={n} onSave={(body) => patch.mutate(body)} saving={patch.isPending} />
+      <Settings
+        n={n}
+        onSave={(body) => patch.mutate(body)}
+        saving={patch.isPending}
+        onDelete={() => {
+          setDelErr(null);
+          setConfirmDelete(true);
+        }}
+      />
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm bg-white rounded-lg shadow-lg p-5 dark:bg-slate-900 dark:border dark:border-slate-700">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Delete newsletter?</h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+              This permanently deletes <span className="font-medium">{n.name}</span>, its subscribers, authors and
+              Email Routing rule. This cannot be undone.
+            </p>
+            {delErr && <p className="mt-2 text-sm text-red-600">{delErr}</p>}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={del.isPending}
+                onClick={() => setConfirmDelete(false)}
+                className="text-sm rounded px-3 py-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={del.isPending}
+                onClick={() => del.mutate()}
+                className="text-sm rounded px-3 py-1.5 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {del.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div>
         <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800 mb-4">
@@ -75,10 +119,12 @@ function Settings({
   n,
   onSave,
   saving,
+  onDelete,
 }: {
   n: Newsletter;
   onSave: (body: { name?: string; inbound_address?: string }) => void;
   saving: boolean;
+  onDelete: () => void;
 }) {
   const [name, setName] = useState(n.name);
   const [addr, setAddr] = useState(n.inbound_address);
@@ -102,6 +148,13 @@ function Settings({
           className="bg-slate-900 text-white text-sm rounded px-3 py-1.5 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
         >
           {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="bg-red-600 text-white text-sm rounded px-3 py-1.5 hover:bg-red-700"
+        >
+          Delete
         </button>
       </div>
       <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">

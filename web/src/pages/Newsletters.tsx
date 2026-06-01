@@ -74,7 +74,14 @@ export default function Newsletters() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Newsletters</h1>
+      <h1 className="text-xl font-semibold">
+        Newsletters
+        {list.data && (
+          <span className="ml-2 text-sm font-normal text-slate-500 dark:text-slate-400">
+            (total {list.data.items.length}, enabled {list.data.items.filter((n) => n.enabled === 1).length})
+          </span>
+        )}
+      </h1>
 
       {warn && (
         <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-2 dark:text-amber-300 dark:bg-amber-900/30 dark:border-amber-800/60">
