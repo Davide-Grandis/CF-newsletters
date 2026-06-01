@@ -114,6 +114,11 @@ export interface Author {
   created_at: string;
 }
 
+export interface Help {
+  content: string;
+  updated: string | null;
+}
+
 export type Quota =
   | { enabled: false; target: number }
   | {

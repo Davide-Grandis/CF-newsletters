@@ -382,6 +382,19 @@ async function handleApi(req: Request, env: Env, url: URL): Promise<Response> {
     });
   }
 
+  // -------- help document --------
+
+  // Renders a markdown document stored in the R2 media bucket (key
+  // `help.md`). Lets operators ship docs without redeploying the worker.
+  if (m === 'GET' && p === '/api/help') {
+    const obj = await env.ASSETS_R2.get('help.md');
+    if (!obj) {
+      return Response.json({ error: 'no help document uploaded' }, { status: 404 });
+    }
+    const content = await obj.text();
+    return Response.json({ content, updated: obj.uploaded?.toISOString() ?? null });
+  }
+
   // -------- stats / dashboard --------
 
   if (m === 'GET' && p === '/api/stats/overview') {

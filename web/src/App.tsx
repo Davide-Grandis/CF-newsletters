@@ -8,6 +8,7 @@ import Campaigns from './pages/Campaigns';
 import CampaignDetail from './pages/CampaignDetail';
 import Bounces from './pages/Bounces';
 import Authors from './pages/Authors';
+import Help from './pages/Help';
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="campaigns/:id" element={<CampaignDetail />} />
         <Route path="bounces" element={<Bounces />} />
         <Route path="authors" element={<Authors />} />
+        <Route path="help" element={<Help />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -101,12 +103,17 @@ function Layout() {
             open ? 'w-56' : 'w-0'
           }`}
         >
-          <nav className="w-56 flex flex-col gap-1 p-3 text-sm">
+          <nav className="w-56 h-full flex flex-col gap-1 p-3 text-base">
             {NAV_ITEMS.map((item) => (
               <NavLink key={item.to} to={item.to} end={item.end} className={navCls}>
                 {item.label}
               </NavLink>
             ))}
+            <div className="mt-auto flex flex-col pt-2 border-t border-slate-200 dark:border-slate-800">
+              <NavLink to="/help" className={navCls}>
+                Help
+              </NavLink>
+            </div>
           </nav>
         </aside>
 
@@ -121,20 +128,23 @@ function Layout() {
   );
 }
 
-const APP_VERSION = '0.1.0';
-const CREATED_DATE = 'April 2026';
+const APP_VERSION = '0.1';
+const CREATED_DATE = 'Apr 28, 2026';
+const LAST_UPDATED = 'Jun 1, 2026';
 
 function Footer() {
   return (
     <footer className="max-w-6xl w-full mx-auto mt-8 pt-4 border-t border-slate-200 dark:border-slate-800">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+      <div className="relative flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
         <span>Created {CREATED_DATE}</span>
         <span aria-hidden>·</span>
+        <span>Last updated {LAST_UPDATED}</span>
+        <span aria-hidden>·</span>
         <span>v{APP_VERSION}</span>
-        <span className="ml-auto flex items-center gap-1">
-          Built on
+        <span className="w-full text-center sm:w-auto sm:absolute sm:left-1/2 sm:-translate-x-1/2 flex items-center justify-center gap-1">
+          Built with
           <HeartIcon />
-          Cloudflare
+          on Cloudflare
         </span>
       </div>
     </footer>

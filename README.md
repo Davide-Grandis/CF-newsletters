@@ -40,6 +40,20 @@ an Access application and the SPA picks up the user's identity from the
 worker rejects any `/api/*` request that is missing that header. There is
 no shared bearer token.
 
+Static media (logos, header images) lives in the `newsletter-admin` R2
+bucket, bound as `ASSETS_R2` and served read-only under `/media/*` (e.g.
+`/media/logoenea1.png`, rendered in the header). The `/media/` prefix is
+used instead of `/assets/` to avoid colliding with the Vite-built SPA
+bundle. Because the whole worker sits behind Access, these objects are
+only reachable by authenticated operators. The bucket is EU-jurisdiction,
+so its binding in `workers/admin/wrangler.toml` declares
+`jurisdiction = "eu"`. Upload a file with:
+
+```bash
+wrangler r2 object put newsletter-admin/logoenea1.png \
+  --jurisdiction eu --file ./logoenea1.png --content-type image/png
+```
+
 Pages:
 
 - **Dashboard** — subscriber/campaign/event totals, warmup quota, last-7-day rollup.
@@ -79,6 +93,9 @@ wrangler queues create newsletter-dlq
 
 # R2
 wrangler r2 bucket create newsletter-archive
+# GUI media (logos, header images) served by the admin worker.
+# Created in the EU jurisdiction, so all access must pass --jurisdiction eu.
+wrangler r2 bucket create newsletter-admin --jurisdiction eu
 ```
 
 Update each `workers/*/wrangler.toml` with the IDs that come back, then:
@@ -102,6 +119,20 @@ for w in ingest consumer tracker bounce cleanup admin; do
   (cd workers/$w && wrangler deploy)
 done
 ```
+
+### Admin worker deploy script
+
+`scripts/deploy-admin.sh` is a convenience wrapper that builds the SPA,
+deploys only the admin worker (pinned to the ENEA PoC account so wrangler
+doesn't prompt), then commits any pending changes and pushes to GitHub.
+
+```bash
+./scripts/deploy-admin.sh "optional commit message"
+```
+
+If no commit message is given a timestamped default is used; a clean tree
+skips the commit. The deploy runs before the push, so a failed deploy
+aborts the script before anything is pushed.
 
 ## Configuration knobs
 
