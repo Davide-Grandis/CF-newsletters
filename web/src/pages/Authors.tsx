@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api, Author } from '../api';
+import { Tooltip } from '../components/Tooltip';
 
 export default function Authors({ newsletterId }: { newsletterId: string }) {
   const qc = useQueryClient();
@@ -89,9 +90,21 @@ export default function Authors({ newsletterId }: { newsletterId: string }) {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
             <tr>
-              <th title="Authorized sender address. Inbound mail from this address is accepted (case-insensitive)." className="text-left p-2">Email</th>
-              <th title="Author's display name (optional)." className="text-left p-2">Name</th>
-              <th title="When this address was added to the allow-list." className="text-left p-2">Added</th>
+              <th className="text-left p-2">
+                <Tooltip text="Authorized sender address. Inbound mail from this address is accepted (case-insensitive).">
+                  <span>Email</span>
+                </Tooltip>
+              </th>
+              <th className="text-left p-2">
+                <Tooltip text="Author's display name (optional).">
+                  <span>Name</span>
+                </Tooltip>
+              </th>
+              <th className="text-left p-2">
+                <Tooltip text="When this address was added to the allow-list.">
+                  <span>Added</span>
+                </Tooltip>
+              </th>
               <th className="p-2 w-1" />
             </tr>
           </thead>

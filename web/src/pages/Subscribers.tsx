@@ -2,6 +2,7 @@ import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, Page, Subscriber } from '../api';
 import { SortIcon } from './Newsletters';
+import { Tooltip } from '../components/Tooltip';
 
 type SortKey = 'email' | 'name' | 'status' | 'verified' | 'bounce_count' | 'subscribed_at';
 type ImportResult = { added: number; duplicated: number };
@@ -244,18 +245,21 @@ function Th({
   className?: string;
 }) {
   const active = sort.key === sortKey;
+  const button = (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      className={`inline-flex items-center gap-1 select-none hover:text-slate-900 dark:hover:text-slate-100 ${
+        active ? 'text-slate-900 dark:text-slate-100' : ''
+      }`}
+    >
+      {label}
+      <SortIcon state={active ? sort.dir : 'none'} />
+    </button>
+  );
   return (
-    <th title={title} className={`p-2 ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}>
-      <button
-        type="button"
-        onClick={() => onSort(sortKey)}
-        className={`inline-flex items-center gap-1 select-none hover:text-slate-900 dark:hover:text-slate-100 ${
-          active ? 'text-slate-900 dark:text-slate-100' : ''
-        }`}
-      >
-        {label}
-        <SortIcon state={active ? sort.dir : 'none'} />
-      </button>
+    <th className={`p-2 ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}>
+      {title ? <Tooltip text={title}>{button}</Tooltip> : button}
     </th>
   );
 }
