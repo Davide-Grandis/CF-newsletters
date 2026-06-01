@@ -131,18 +131,18 @@ const LAST_UPDATED = 'Jun 1, 2026';
 function Footer() {
   return (
     <footer className="shrink-0 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-3">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 max-w-6xl mx-auto">
-        <span className="flex items-center gap-1">
-          Built with
-          <HeartIcon />
-          on Cloudflare
-        </span>
-        <span className="ml-auto flex items-center gap-x-4 gap-y-1 flex-wrap">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+        <span className="flex items-center gap-x-4 gap-y-1 flex-wrap">
           <span>Created {CREATED_DATE}</span>
           <span aria-hidden>·</span>
           <span>Last updated {LAST_UPDATED}</span>
           <span aria-hidden>·</span>
           <span>v{APP_VERSION}</span>
+        </span>
+        <span className="flex items-center gap-1">
+          Built with
+          <HeartIcon />
+          on Cloudflare
         </span>
       </div>
     </footer>
