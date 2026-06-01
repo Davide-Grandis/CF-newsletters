@@ -33,6 +33,7 @@ const NAV_ITEMS = [
   { to: '/campaigns', label: 'Campaigns', end: false },
   { to: '/bounces', label: 'Bounces', end: false },
   { to: '/authors', label: 'Authors', end: false },
+  { to: '/help', label: 'Help', end: false },
 ];
 
 function Layout() {
@@ -42,8 +43,8 @@ function Layout() {
   const { theme, toggle } = useTheme();
 
   return (
-    <div className="min-h-full flex flex-col">
-      <header className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+    <div className="h-screen flex flex-col">
+      <header className="shrink-0 border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="px-4 h-14 flex items-center gap-3">
           <button
             onClick={() => setOpen((v) => !v)}
@@ -109,21 +110,17 @@ function Layout() {
                 {item.label}
               </NavLink>
             ))}
-            <div className="mt-auto flex flex-col pt-2 border-t border-slate-200 dark:border-slate-800">
-              <NavLink to="/help" className={navCls}>
-                Help
-              </NavLink>
-            </div>
           </nav>
         </aside>
 
-        <main className="flex-1 min-w-0 flex flex-col px-4 py-6">
-          <div className="max-w-6xl w-full mx-auto flex-1">
+        <main className="flex-1 min-w-0 overflow-y-auto px-4 py-6">
+          <div className="max-w-6xl w-full mx-auto">
             <Outlet />
           </div>
-          <Footer />
         </main>
       </div>
+
+      <Footer />
     </div>
   );
 }
@@ -134,8 +131,8 @@ const LAST_UPDATED = 'Jun 1, 2026';
 
 function Footer() {
   return (
-    <footer className="max-w-6xl w-full mx-auto mt-8 pt-4 border-t border-slate-200 dark:border-slate-800">
-      <div className="relative flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+    <footer className="shrink-0 border-t border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 px-4 py-3">
+      <div className="relative flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 max-w-6xl mx-auto">
         <span>Created {CREATED_DATE}</span>
         <span aria-hidden>·</span>
         <span>Last updated {LAST_UPDATED}</span>
