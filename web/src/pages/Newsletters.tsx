@@ -154,7 +154,7 @@ export default function Newsletters() {
             <tr>
               <Th label="Name" hint="(click to edit)" title="Newsletter name. Click a row's name to edit it." sortKey="name" sort={sort} onSort={toggleSort} className="w-1/4" />
               <Th label="Inbound address" title="Email address that authors send issues to. Mail here is routed to the ingest worker." sortKey="inbound_address" sort={sort} onSort={toggleSort} className="w-1/4" />
-              <Th label="Subscribers" title="Active subscribers / total subscribers. Only active subscribers receive sends." sortKey="subscriber_count" sort={sort} onSort={toggleSort} align="right" />
+              <Th label="Subscribers" title="Shown as “active / total”: the first number is active subscribers (who receive sends), the second is the total number of subscribers." sortKey="subscriber_count" sort={sort} onSort={toggleSort} align="right" />
               <Th label="Authors" title="Number of authorized sender addresses for this newsletter." sortKey="author_count" sort={sort} onSort={toggleSort} align="right" />
               <Th label="Enabled" title="Whether the newsletter accepts inbound mail. Disabled newsletters reject incoming email." sortKey="enabled" sort={sort} onSort={toggleSort} align="right" />
             </tr>
@@ -172,7 +172,7 @@ export default function Newsletters() {
                 </td>
                 <td className="p-2 font-mono text-xs truncate">{n.inbound_address}</td>
                 <td className="p-2 text-right">
-                  <Tooltip text="Active subscribers / total subscribers">
+                  <Tooltip text="Active subscribers / total subscribers (first = active, second = total)">
                     <span>
                       {n.active_count ?? 0}
                       <span className="text-slate-400 dark:text-slate-500"> / {n.subscriber_count ?? 0}</span>
