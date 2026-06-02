@@ -22,6 +22,17 @@ export default function Dashboard() {
   const nls = data.newsletters ?? [];
   const enabledCount = nls.filter((n) => n.enabled === 1).length;
   const totalSubs = data.subscribers.reduce((a, s) => a + s.n, 0);
+  // With many newsletters the overview shows only the most active ones; the
+  // full list lives on the Newsletters page.
+  const TOP_N = 12;
+  const topNls = [...nls]
+    .sort(
+      (a, b) =>
+        b.active - a.active ||
+        b.subscribers - a.subscribers ||
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+    )
+    .slice(0, TOP_N);
 
   return (
     <div className="space-y-6">
@@ -35,8 +46,31 @@ export default function Dashboard() {
 
       {quota.data && <QuotaPanel q={quota.data} />}
 
+      <h2 className="text-base font-medium">Last 7 days</h2>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <Card label="Opens" value={evt.open ?? 0} />
+        <Card label="Clicks" value={evt.click ?? 0} />
+        <Card label="Bounces" value={evt.bounce ?? 0} />
+        <Card label="Unsubs" value={evt.unsubscribe ?? 0} />
+        <Card label="Downloads" value={evt.download ?? 0} />
+      </div>
+
       <section>
-        <h2 className="text-base font-medium mb-2">By newsletter</h2>
+        <div className="flex items-baseline justify-between mb-2">
+          <h2 className="text-base font-medium">
+            By newsletter
+            {nls.length > TOP_N && (
+              <span className="ml-2 text-xs font-normal text-slate-400 dark:text-slate-500">
+                top {TOP_N} by active subscribers
+              </span>
+            )}
+          </h2>
+          {nls.length > 0 && (
+            <Link to="/newsletters" className="text-sm text-orange-600 hover:underline dark:text-orange-400">
+              View all {nls.length} →
+            </Link>
+          )}
+        </div>
         {nls.length === 0 ? (
           <div className="text-sm text-slate-500 dark:text-slate-400">No newsletters yet.</div>
         ) : (
@@ -52,7 +86,7 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {nls.map((n) => (
+                {topNls.map((n) => (
                   <tr key={n.id} className="border-t border-slate-100 dark:border-slate-800">
                     <td className="p-2">
                       <Link to={`/newsletters/${n.id}`} className="text-orange-600 hover:underline dark:text-orange-400">
@@ -79,15 +113,6 @@ export default function Dashboard() {
           </div>
         )}
       </section>
-
-      <h2 className="text-base font-medium">Last 7 days</h2>
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card label="Opens" value={evt.open ?? 0} />
-        <Card label="Clicks" value={evt.click ?? 0} />
-        <Card label="Bounces" value={evt.bounce ?? 0} />
-        <Card label="Unsubs" value={evt.unsubscribe ?? 0} />
-        <Card label="Downloads" value={evt.download ?? 0} />
-      </div>
     </div>
   );
 }
