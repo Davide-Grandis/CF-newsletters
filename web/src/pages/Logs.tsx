@@ -116,7 +116,7 @@ export default function Logs() {
                     <td className="px-3 py-1 whitespace-nowrap text-slate-600 dark:text-slate-300">{r.newsletter_name ?? '—'}</td>
                     <td className="px-3 py-1 whitespace-nowrap">
                       {r.campaign_id ? (
-                        <Link to={`/campaigns/${r.campaign_id}`} className="font-mono text-sm text-slate-500 hover:underline dark:text-slate-400">
+                        <Link to={`/campaigns/${r.campaign_id}`} className="text-slate-500 hover:underline dark:text-slate-400">
                           {r.campaign_id.slice(0, 8)}…
                         </Link>
                       ) : (
@@ -124,7 +124,7 @@ export default function Logs() {
                       )}
                     </td>
                     <td className="px-3 py-1 text-slate-500 dark:text-slate-400">{r.source}</td>
-                    <td className="px-3 py-1 font-mono text-sm">{r.event}</td>
+                    <td className="px-3 py-1">{r.event}</td>
                     <td className="px-3 py-1 text-slate-700 dark:text-slate-200">
                       {r.message ?? (r.kind === 'event' ? [r.email, r.detail].filter(Boolean).join(' — ') : '—')}
                     </td>
