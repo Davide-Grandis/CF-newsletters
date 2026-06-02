@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS newsletters (
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Newsletter names must be unique, case-insensitively.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_newsletters_name ON newsletters(name COLLATE NOCASE);
+
 -- Seed a default newsletter so a fresh install works out of the box.
 INSERT OR IGNORE INTO newsletters (id, name, inbound_address, enabled)
   VALUES ('default', 'Default', 'newsletter@eneanewsletter.it', 1);

@@ -294,6 +294,12 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
     if (!addr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
       return Response.json({ error: 'valid inbound_address required' }, { status: 400 });
     }
+    // Names must be unique, case-insensitively.
+    const dupe = await env.DB
+      .prepare('SELECT 1 FROM newsletters WHERE name = ? COLLATE NOCASE LIMIT 1')
+      .bind(nm)
+      .first();
+    if (dupe) return Response.json({ error: 'a newsletter with this name already exists' }, { status: 409 });
     let from: string | null = null;
     if (typeof from_address === 'string' && from_address.trim() !== '') {
       const r = validateFromAddress(from_address, rawEnv.BASE_DOMAIN);
@@ -307,8 +313,11 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
         .bind(id, nm, addr, from)
         .run();
     } catch (err) {
-      if (/UNIQUE/i.test((err as Error).message)) {
-        return Response.json({ error: 'inbound address already in use' }, { status: 409 });
+      const msg = (err as Error).message;
+      if (/UNIQUE/i.test(msg)) {
+        return /name/i.test(msg)
+          ? Response.json({ error: 'a newsletter with this name already exists' }, { status: 409 })
+          : Response.json({ error: 'inbound address already in use' }, { status: 409 });
       }
       throw err;
     }
@@ -349,6 +358,13 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
         if (typeof body.name === 'string') {
           const nm = body.name.trim();
           if (!nm) return Response.json({ error: 'name cannot be empty' }, { status: 400 });
+          // Reject a rename that collides with another newsletter's name
+          // (case-insensitive); the newsletter itself is excluded.
+          const dupe = await env.DB
+            .prepare('SELECT 1 FROM newsletters WHERE name = ? COLLATE NOCASE AND id <> ? LIMIT 1')
+            .bind(nm, nid)
+            .first();
+          if (dupe) return Response.json({ error: 'a newsletter with this name already exists' }, { status: 409 });
           sets.push('name = ?');
           binds.push(nm);
         }
