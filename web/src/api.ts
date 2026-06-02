@@ -115,6 +115,7 @@ export interface BounceEvent {
 export interface Page<T> {
   items: T[];
   nextCursor: number | string | null;
+  total?: number;
 }
 
 export interface LogRow {

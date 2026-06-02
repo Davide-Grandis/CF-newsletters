@@ -846,14 +846,25 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     // Resolve the newsletter name from the log's own newsletter_id when present
     // (ingest entries), otherwise via the campaign (consumer entries & events).
-    const sql =
-      `SELECT f.*, n.name AS newsletter_name, c.subject AS campaign_subject FROM (${inner}) f ` +
+    const joined =
+      `FROM (${inner}) f ` +
       'LEFT JOIN campaigns c ON c.id = f.campaign_id ' +
       'LEFT JOIN newsletters n ON n.id = COALESCE(f.newsletter_id, c.newsletter_id) ' +
-      `${where} ORDER BY f.ts DESC, f.id DESC LIMIT ? OFFSET ?`;
-    const { results } = await env.DB.prepare(sql).bind(...binds, limit, offset).all();
-    const items = results ?? [];
-    return Response.json({ items, nextCursor: items.length === limit ? offset + limit : null });
+      where;
+    const sql =
+      `SELECT f.*, n.name AS newsletter_name, c.subject AS campaign_subject ${joined} ` +
+      'ORDER BY f.ts DESC, f.id DESC LIMIT ? OFFSET ?';
+    const [page, count] = await Promise.all([
+      env.DB.prepare(sql).bind(...binds, limit, offset).all(),
+      env.DB.prepare(`SELECT COUNT(*) AS n ${joined}`).bind(...binds).first<{ n: number }>(),
+    ]);
+    const items = page.results ?? [];
+    const total = count?.n ?? 0;
+    return Response.json({
+      items,
+      total,
+      nextCursor: offset + items.length < total ? offset + limit : null,
+    });
   }
 
   // CSV export of the (filtered) activity feed. Reuses the same merged query
