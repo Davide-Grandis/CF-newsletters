@@ -37,7 +37,7 @@ const NAV_ITEMS = [
   { to: '/newsletters', label: 'Newsletters', end: false },
   { to: '/campaigns', label: 'Campaigns', end: false },
   { to: '/bounces', label: 'Bounces', end: false },
-  { to: '/logs', label: 'Logs', end: false },
+  { to: '/logs', label: 'Analytics', end: false },
   { to: '/settings', label: 'Settings', end: false },
   { to: '/help', label: 'Help', end: false },
 ];
