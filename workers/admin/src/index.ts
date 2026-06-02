@@ -799,6 +799,57 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
     return Response.json({ items: results ?? [] });
   }
 
+  // -------- logs --------
+  //
+  // Unified, searchable activity feed merging the pipeline `logs` table
+  // (ingest -> queue -> consumer) with recipient engagement `events`
+  // (open/click/bounce/unsubscribe/download). Offset-paginated (cursor =
+  // offset) and ordered newest-first.
+
+  if (m === 'GET' && p === '/api/logs') {
+    const limit = clamp(Number(url.searchParams.get('limit') ?? '50'), 1, 200);
+    const offset = Math.max(0, Number(url.searchParams.get('cursor') ?? '0') || 0);
+    const q = (url.searchParams.get('q') ?? '').trim();
+    const source = (url.searchParams.get('source') ?? '').trim();
+    const level = (url.searchParams.get('level') ?? '').trim();
+
+    const inner =
+      "SELECT 'log' AS kind, l.id AS id, l.ts AS ts, l.level AS level, l.source AS source, " +
+        'l.event AS event, l.campaign_id AS campaign_id, NULL AS subscriber_id, NULL AS email, ' +
+        'l.message AS message, l.detail AS detail ' +
+        'FROM logs l ' +
+      'UNION ALL ' +
+      "SELECT 'event' AS kind, e.id AS id, e.ts AS ts, " +
+        "CASE WHEN e.type IN ('bounce','complaint') THEN 'warn' ELSE 'info' END AS level, " +
+        "CASE WHEN e.type IN ('bounce','complaint') THEN 'bounce' ELSE 'tracker' END AS source, " +
+        'e.type AS event, e.campaign_id AS campaign_id, e.subscriber_id AS subscriber_id, sub.email AS email, ' +
+        'NULL AS message, e.url AS detail ' +
+        'FROM events e LEFT JOIN subscribers sub ON sub.id = e.subscriber_id';
+
+    const conds: string[] = [];
+    const binds: unknown[] = [];
+    if (source) {
+      conds.push('f.source = ?');
+      binds.push(source);
+    }
+    if (level) {
+      conds.push('f.level = ?');
+      binds.push(level);
+    }
+    if (q) {
+      const like = `%${q}%`;
+      conds.push(
+        '(f.event LIKE ? OR f.message LIKE ? OR f.campaign_id LIKE ? OR f.email LIKE ? OR f.detail LIKE ?)',
+      );
+      binds.push(like, like, like, like, like);
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    const sql = `SELECT * FROM (${inner}) f ${where} ORDER BY f.ts DESC, f.id DESC LIMIT ? OFFSET ?`;
+    const { results } = await env.DB.prepare(sql).bind(...binds, limit, offset).all();
+    const items = results ?? [];
+    return Response.json({ items, nextCursor: items.length === limit ? offset + limit : null });
+  }
+
   // -------- warmup quota --------
 
   if (m === 'GET' && p === '/api/quota') {

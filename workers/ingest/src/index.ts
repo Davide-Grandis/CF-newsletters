@@ -8,7 +8,7 @@ import {
   type AttachmentInput,
   type AttachmentLimits,
 } from '../../../shared/attachments';
-import { iterateActiveSubscribers } from '../../../shared/db';
+import { iterateActiveSubscribers, writeLog } from '../../../shared/db';
 import { loadSettings } from '../../../shared/settings';
 import type { QueueMessage, Recipient } from '../../../shared/types';
 
@@ -36,15 +36,37 @@ export default {
     //    recipient (`message.to`) is matched against `newsletters.inbound_address`
     //    (case-insensitive). A disabled or unknown newsletter is rejected.
     const recipient = (message.to ?? '').toLowerCase();
+    const sender = (message.from ?? '').toLowerCase();
+    await writeLog(env.DB, {
+      source: 'ingest',
+      event: 'ingest.received',
+      message: `Inbound email from ${sender || '(unknown)'} to ${recipient || '(unknown)'}`,
+      detail: { from: sender, to: recipient },
+    });
     const newsletter = await env.DB
       .prepare('SELECT id, enabled FROM newsletters WHERE inbound_address = ? LIMIT 1')
       .bind(recipient)
       .first<{ id: string; enabled: number }>();
     if (!newsletter) {
+      await writeLog(env.DB, {
+        level: 'warn',
+        source: 'ingest',
+        event: 'ingest.rejected',
+        message: `Rejected: unknown newsletter address ${recipient}`,
+        detail: { reason: 'unknown_newsletter', to: recipient },
+      });
       message.setReject('Unknown newsletter address');
       return;
     }
     if (!newsletter.enabled) {
+      await writeLog(env.DB, {
+        level: 'warn',
+        source: 'ingest',
+        event: 'ingest.rejected',
+        newsletterId: newsletter.id,
+        message: `Rejected: newsletter ${recipient} is disabled`,
+        detail: { reason: 'newsletter_disabled', to: recipient },
+      });
       message.setReject('Newsletter is disabled');
       return;
     }
@@ -53,12 +75,20 @@ export default {
     // 2. Author allow-list + auth check, scoped to this newsletter.
     //    The allow-list lives in the D1 `authors` table and is managed via the
     //    admin worker (CRUD endpoints / GUI). The lookup is case-insensitive.
-    const from = (message.from ?? '').toLowerCase();
+    const from = sender;
     const authorRow = await env.DB
       .prepare('SELECT 1 AS ok FROM authors WHERE newsletter_id = ? AND email = ? LIMIT 1')
       .bind(newsletterId, from)
       .first<{ ok: number }>();
     if (!authorRow) {
+      await writeLog(env.DB, {
+        level: 'warn',
+        source: 'ingest',
+        event: 'ingest.rejected',
+        newsletterId,
+        message: `Rejected: ${from} not authorized for this newsletter`,
+        detail: { reason: 'sender_not_authorized', from },
+      });
       message.setReject('Sender not authorized for this newsletter');
       return;
     }
@@ -98,6 +128,14 @@ export default {
     try {
       validateAttachments(inputs, limits);
     } catch (e) {
+      await writeLog(env.DB, {
+        level: 'warn',
+        source: 'ingest',
+        event: 'ingest.rejected',
+        newsletterId,
+        message: `Rejected: attachment validation failed — ${(e as Error).message}`,
+        detail: { reason: 'attachment_rejected', error: (e as Error).message },
+      });
       message.setReject(`Attachment rejected: ${(e as Error).message}`);
       return;
     }
@@ -115,6 +153,14 @@ export default {
       )
       .bind(campaignId, newsletterId, subject, html, text, from, inputs.length, totalAttBytes, linkMode ? 1 : 0)
       .run();
+    await writeLog(env.DB, {
+      source: 'ingest',
+      event: 'ingest.campaign_created',
+      campaignId,
+      newsletterId,
+      message: `Campaign created: "${subject}" (${inputs.length} attachment(s)${linkMode ? ', link mode' : ''})`,
+      detail: { subject, from, attachments: inputs.length, attachmentBytes: totalAttBytes, linkMode },
+    });
 
     // 6. Store attachments in R2 + D1 (deduped by sha256 within this campaign)
     const seen = new Set<string>();
@@ -150,11 +196,21 @@ export default {
     // 7. Enqueue subscriber batches
     const batchSize = Math.max(1, Number(env.BATCH_SIZE));
     let total = 0;
+    let batches = 0;
     let buf: Recipient[] = [];
     const flush = async () => {
       if (buf.length === 0) return;
       await env.QUEUE.send({ campaignId, batch: buf });
       total += buf.length;
+      batches += 1;
+      await writeLog(env.DB, {
+        source: 'ingest',
+        event: 'queue.enqueued',
+        campaignId,
+        newsletterId,
+        message: `Enqueued batch ${batches} (${buf.length} recipients)`,
+        detail: { batch: batches, size: buf.length, batchSize },
+      });
       buf = [];
     };
     for await (const s of iterateActiveSubscribers(env.DB, newsletterId)) {
@@ -167,6 +223,16 @@ export default {
       .prepare('UPDATE campaigns SET total_recipients = ? WHERE id = ?')
       .bind(total, campaignId)
       .run();
+    await writeLog(env.DB, {
+      source: 'ingest',
+      event: 'ingest.queued',
+      campaignId,
+      newsletterId,
+      message: total === 0
+        ? 'No active subscribers — nothing enqueued'
+        : `Queued ${total} recipient(s) across ${batches} batch(es) of ${batchSize}`,
+      detail: { total, batches, batchSize },
+    });
   },
 };
 

@@ -117,6 +117,20 @@ export interface Page<T> {
   nextCursor: number | string | null;
 }
 
+export interface LogRow {
+  kind: 'log' | 'event';
+  id: number;
+  ts: string;
+  level: string;
+  source: string;
+  event: string;
+  campaign_id: string | null;
+  subscriber_id: number | null;
+  email: string | null;
+  message: string | null;
+  detail: string | null;
+}
+
 export interface Overview {
   subscribers: Array<{ status: string; n: number }>;
   campaigns: { total: number; sent: number; sending: number } | null;

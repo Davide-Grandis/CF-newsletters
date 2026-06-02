@@ -114,6 +114,26 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_campaign_type ON events(campaign_id, type);
 
+-- Application / pipeline activity log. Unlike `events` (recipient engagement),
+-- this captures the campaign processing pipeline: ingest worker firing, queue
+-- enqueue details, and consumer send activity. Written best-effort by the
+-- workers (failures here never break the pipeline) and surfaced, merged with
+-- engagement events, on the admin console's Logs page.
+CREATE TABLE IF NOT EXISTS logs (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts             TEXT NOT NULL DEFAULT (datetime('now')),
+  level          TEXT NOT NULL DEFAULT 'info'
+                   CHECK (level IN ('debug','info','warn','error')),
+  source         TEXT NOT NULL,   -- worker name: ingest|consumer|admin|bounce|tracker
+  event          TEXT NOT NULL,   -- machine code e.g. 'ingest.received','queue.enqueued'
+  campaign_id    TEXT,
+  newsletter_id  TEXT,
+  message        TEXT,            -- human-readable summary
+  detail         TEXT             -- optional JSON blob
+);
+CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(ts);
+CREATE INDEX IF NOT EXISTS idx_logs_campaign ON logs(campaign_id);
+
 -- Admin console users. Identity is provided by Cloudflare Access; this table
 -- only stores per-user UI preferences so the chosen theme follows the user
 -- across devices/browsers. A row is created on first login, seeded with the

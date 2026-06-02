@@ -149,8 +149,8 @@ export async function recordSendFailure(
 export async function markCampaignCompleteIfDone(
   db: D1Database,
   campaignId: string,
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const res = await db
     .prepare(
       "UPDATE campaigns SET status = 'done' " +
         "WHERE id = ? AND status = 'sending' AND total_recipients > 0 " +
@@ -158,4 +158,52 @@ export async function markCampaignCompleteIfDone(
     )
     .bind(campaignId)
     .run();
+  return (res.meta?.changes ?? 0) > 0;
+}
+
+/**
+ * A single application / pipeline log entry written to the D1 `logs` table.
+ * `detail` is stored as JSON when an object is given, or verbatim for strings.
+ */
+export interface LogEntry {
+  level?: 'debug' | 'info' | 'warn' | 'error';
+  source: string;
+  event: string;
+  campaignId?: string | null;
+  newsletterId?: string | null;
+  message?: string | null;
+  detail?: unknown;
+}
+
+/**
+ * Best-effort write of a pipeline log row. Logging must never break the email
+ * pipeline, so any failure here is swallowed (and echoed to the worker console
+ * for Cloudflare observability).
+ */
+export async function writeLog(db: D1Database, e: LogEntry): Promise<void> {
+  try {
+    const detail =
+      e.detail === undefined || e.detail === null
+        ? null
+        : typeof e.detail === 'string'
+          ? e.detail
+          : JSON.stringify(e.detail);
+    await db
+      .prepare(
+        'INSERT INTO logs (level, source, event, campaign_id, newsletter_id, message, detail) ' +
+          'VALUES (?, ?, ?, ?, ?, ?, ?)',
+      )
+      .bind(
+        e.level ?? 'info',
+        e.source,
+        e.event,
+        e.campaignId ?? null,
+        e.newsletterId ?? null,
+        e.message ?? null,
+        detail,
+      )
+      .run();
+  } catch (err) {
+    console.error('writeLog failed', e.event, err);
+  }
 }

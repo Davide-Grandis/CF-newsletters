@@ -1,7 +1,7 @@
 import { EmailMessage } from 'cloudflare:email';
 import { buildEmail, estimateRawSize, type AttachmentPart } from '../../../shared/mime';
 import { getAttachmentBytes } from '../../../shared/attachments';
-import { getCampaign, getCampaignAttachments, recordSendSuccess, recordSendFailure, markCampaignCompleteIfDone } from '../../../shared/db';
+import { getCampaign, getCampaignAttachments, recordSendSuccess, recordSendFailure, markCampaignCompleteIfDone, writeLog } from '../../../shared/db';
 import { instrumentHtml, unsubscribeUrl, signDownloadUrl } from '../../../shared/tracking';
 import type { QueueMessage } from '../../../shared/types';
 import { readWarmupConfig, currentWindow, delayUntilNextWindow } from '../../../shared/warmup';
@@ -55,11 +55,27 @@ export default {
     for (const msg of batch.messages) {
       const { campaignId, batch: recipients } = msg.body;
 
+      await writeLog(env.DB, {
+        source: 'consumer',
+        event: 'consumer.batch_received',
+        campaignId,
+        message: `Processing batch of ${recipients.length} recipient(s)`,
+        detail: { recipients: recipients.length },
+      });
+
       // Warmup gate: if no capacity, re-queue with delay until next window.
       if (win) {
         const remaining = Math.min(dailyRemaining, weeklyRemaining);
         if (remaining <= 0) {
           const delaySeconds = delayUntilNextWindow(win, dailyRemaining, weeklyRemaining);
+          await writeLog(env.DB, {
+            level: 'warn',
+            source: 'consumer',
+            event: 'consumer.throttled',
+            campaignId,
+            message: `Warmup cap reached — batch re-queued for ${delaySeconds}s`,
+            detail: { delaySeconds, dailyRemaining, weeklyRemaining },
+          });
           msg.retry({ delaySeconds });
           continue;
         }
@@ -71,6 +87,13 @@ export default {
             { campaignId, batch: overflow },
             { delaySeconds },
           );
+          await writeLog(env.DB, {
+            source: 'consumer',
+            event: 'consumer.split',
+            campaignId,
+            message: `Partial warmup capacity — sending ${recipients.length}, deferred ${overflow.length} for ${delaySeconds}s`,
+            detail: { sending: recipients.length, deferred: overflow.length, delaySeconds },
+          });
         }
       }
 
@@ -109,6 +132,8 @@ export default {
           throw new Error(`message too large (${estimate} bytes)`);
         }
 
+        let sentInBatch = 0;
+        let failedInBatch = 0;
         for (const r of recipients) {
           try {
             const html = await renderRecipientHtml(env, campaign, allAtts, r.subscriberId);
@@ -139,18 +164,44 @@ export default {
             const email = new EmailMessage(fromAddr, r.email, raw);
             await env.SEND_EMAIL.send(email);
             await recordSendSuccess(env.DB, campaignId, r.subscriberId, messageId);
+            sentInBatch++;
             // Track warmup consumption for subsequent messages in this batch.
             dailyRemaining--;
             weeklyRemaining--;
           } catch (err) {
             await recordSendFailure(env.DB, campaignId, r.subscriberId, (err as Error).message);
+            failedInBatch++;
           }
         }
+        await writeLog(env.DB, {
+          level: failedInBatch > 0 ? 'warn' : 'info',
+          source: 'consumer',
+          event: 'consumer.batch_done',
+          campaignId,
+          message: `Batch complete: ${sentInBatch} sent, ${failedInBatch} failed`,
+          detail: { sent: sentInBatch, failed: failedInBatch },
+        });
         // Once every recipient has been processed, mark the campaign sent.
-        await markCampaignCompleteIfDone(env.DB, campaignId);
+        const completed = await markCampaignCompleteIfDone(env.DB, campaignId);
+        if (completed) {
+          await writeLog(env.DB, {
+            source: 'consumer',
+            event: 'consumer.campaign_complete',
+            campaignId,
+            message: 'All recipients processed — campaign marked done',
+          });
+        }
         msg.ack();
       } catch (err) {
         console.error('batch error', err);
+        await writeLog(env.DB, {
+          level: 'error',
+          source: 'consumer',
+          event: 'consumer.batch_error',
+          campaignId,
+          message: `Batch error — retrying: ${(err as Error).message}`,
+          detail: { error: (err as Error).message },
+        });
         msg.retry();
       }
     }
