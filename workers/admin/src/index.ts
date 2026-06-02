@@ -269,16 +269,28 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
   // -------- newsletters --------
 
   if (m === 'GET' && p === '/api/newsletters') {
-    const { results } = await env.DB
-      .prepare(
-        `SELECT n.id, n.name, n.inbound_address, n.from_address, n.enabled, n.created_at, ` +
-          `(SELECT COUNT(*) FROM subscribers s WHERE s.newsletter_id = n.id) AS subscriber_count, ` +
-          `(SELECT COUNT(*) FROM subscribers s WHERE s.newsletter_id = n.id AND s.status='active') AS active_count, ` +
-          `(SELECT COUNT(*) FROM authors a WHERE a.newsletter_id = n.id) AS author_count ` +
-          `FROM newsletters n ORDER BY n.created_at ASC`,
-      )
-      .all();
-    return Response.json({ items: results ?? [] });
+    const limit = clamp(Number(url.searchParams.get('limit') ?? '20'), 1, 200);
+    const offset = Math.max(0, Number(url.searchParams.get('cursor') ?? '0') || 0);
+    const [page, count] = await Promise.all([
+      env.DB
+        .prepare(
+          `SELECT n.id, n.name, n.inbound_address, n.from_address, n.enabled, n.created_at, ` +
+            `(SELECT COUNT(*) FROM subscribers s WHERE s.newsletter_id = n.id) AS subscriber_count, ` +
+            `(SELECT COUNT(*) FROM subscribers s WHERE s.newsletter_id = n.id AND s.status='active') AS active_count, ` +
+            `(SELECT COUNT(*) FROM authors a WHERE a.newsletter_id = n.id) AS author_count ` +
+            `FROM newsletters n ORDER BY n.created_at ASC LIMIT ? OFFSET ?`,
+        )
+        .bind(limit, offset)
+        .all(),
+      env.DB.prepare('SELECT COUNT(*) AS n FROM newsletters').first<{ n: number }>(),
+    ]);
+    const items = page.results ?? [];
+    const total = count?.n ?? 0;
+    return Response.json({
+      items,
+      total,
+      nextCursor: offset + items.length < total ? offset + limit : null,
+    });
   }
 
   if (m === 'POST' && p === '/api/newsletters') {
@@ -513,10 +525,10 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
       if (m === 'GET') {
         const status = url.searchParams.get('status');
         const q = url.searchParams.get('q');
-        const cursor = Number(url.searchParams.get('cursor') ?? '0');
+        const offset = Math.max(0, Number(url.searchParams.get('cursor') ?? '0') || 0);
         const limit = clamp(Number(url.searchParams.get('limit') ?? '50'), 1, 200);
-        const where: string[] = ['newsletter_id = ?', 'id > ?'];
-        const binds: unknown[] = [nid, cursor];
+        const where: string[] = ['newsletter_id = ?'];
+        const binds: unknown[] = [nid];
         if (status) {
           where.push('status = ?');
           binds.push(status);
@@ -526,14 +538,27 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
           const like = `%${q.replace(/[%_]/g, (c) => '\\' + c)}%`;
           binds.push(like, like);
         }
-        binds.push(limit);
-        const sql =
-          `SELECT id, email, name, verified, status, bounce_count, subscribed_at FROM subscribers ` +
-          `WHERE ${where.join(' AND ')} ORDER BY id ASC LIMIT ?`;
-        const { results } = await env.DB.prepare(sql).bind(...binds).all();
-        const last = results?.[results.length - 1] as { id: number } | undefined;
-        const next = last && results.length === limit ? last.id : null;
-        return Response.json({ items: results ?? [], nextCursor: next });
+        const whereSql = `WHERE ${where.join(' AND ')}`;
+        const [page, count] = await Promise.all([
+          env.DB
+            .prepare(
+              `SELECT id, email, name, verified, status, bounce_count, subscribed_at FROM subscribers ` +
+                `${whereSql} ORDER BY id ASC LIMIT ? OFFSET ?`,
+            )
+            .bind(...binds, limit, offset)
+            .all(),
+          env.DB
+            .prepare(`SELECT COUNT(*) AS n FROM subscribers ${whereSql}`)
+            .bind(...binds)
+            .first<{ n: number }>(),
+        ]);
+        const items = page.results ?? [];
+        const total = count?.n ?? 0;
+        return Response.json({
+          items,
+          total,
+          nextCursor: offset + items.length < total ? offset + limit : null,
+        });
       }
       if (m === 'POST') {
         const { email, name } = await req.json<{ email: string; name?: string }>();
@@ -673,33 +698,38 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
 
   if (m === 'GET' && p === '/api/campaigns') {
     const limit = clamp(Number(url.searchParams.get('limit') ?? '50'), 1, 200);
-    const cursor = url.searchParams.get('cursor');
+    const offset = Math.max(0, Number(url.searchParams.get('cursor') ?? '0') || 0);
     const newsletterId = url.searchParams.get('newsletter_id');
     const conds: string[] = [];
     const binds: unknown[] = [];
-    if (cursor) {
-      conds.push('c.created_at < ?');
-      binds.push(cursor);
-    }
     if (newsletterId) {
       conds.push('c.newsletter_id = ?');
       binds.push(newsletterId);
     }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
-    binds.push(limit);
-    const { results } = await env.DB
-      .prepare(
-        `SELECT c.id, c.newsletter_id, n.name AS newsletter_name, c.subject, c.status, ` +
-          `c.total_recipients, c.sent_count, c.failed_count, ` +
-          `c.attachment_count, c.link_mode, c.created_at ` +
-          `FROM campaigns c LEFT JOIN newsletters n ON n.id = c.newsletter_id ` +
-          `${where} ORDER BY c.created_at DESC LIMIT ?`,
-      )
-      .bind(...binds)
-      .all<{ created_at: string }>();
-    const last = results?.[results.length - 1];
-    const next = last && results.length === limit ? last.created_at : null;
-    return Response.json({ items: results ?? [], nextCursor: next });
+    const [page, count] = await Promise.all([
+      env.DB
+        .prepare(
+          `SELECT c.id, c.newsletter_id, n.name AS newsletter_name, c.subject, c.status, ` +
+            `c.total_recipients, c.sent_count, c.failed_count, ` +
+            `c.attachment_count, c.link_mode, c.created_at ` +
+            `FROM campaigns c LEFT JOIN newsletters n ON n.id = c.newsletter_id ` +
+            `${where} ORDER BY c.created_at DESC LIMIT ? OFFSET ?`,
+        )
+        .bind(...binds, limit, offset)
+        .all(),
+      env.DB
+        .prepare(`SELECT COUNT(*) AS n FROM campaigns c ${where}`)
+        .bind(...binds)
+        .first<{ n: number }>(),
+    ]);
+    const items = page.results ?? [];
+    const total = count?.n ?? 0;
+    return Response.json({
+      items,
+      total,
+      nextCursor: offset + items.length < total ? offset + limit : null,
+    });
   }
 
   const campMatch = /^\/api\/campaigns\/([^/]+)(?:\/(timeseries|sends|replay-failed))?$/.exec(p);
@@ -748,26 +778,36 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
 
     if (m === 'GET' && sub === 'sends') {
       const status = url.searchParams.get('status');
-      const cursor = Number(url.searchParams.get('cursor') ?? '0');
+      const offset = Math.max(0, Number(url.searchParams.get('cursor') ?? '0') || 0);
       const limit = clamp(Number(url.searchParams.get('limit') ?? '50'), 1, 200);
-      const where: string[] = ['s.campaign_id = ?', 's.id > ?'];
-      const binds: unknown[] = [id, cursor];
+      const where: string[] = ['s.campaign_id = ?'];
+      const binds: unknown[] = [id];
       if (status) {
         where.push('s.status = ?');
         binds.push(status);
       }
-      binds.push(limit);
-      const { results } = await env.DB
-        .prepare(
-          `SELECT s.id, s.subscriber_id, sub.email, s.status, s.sent_at, s.error, s.message_id ` +
-            `FROM sends s LEFT JOIN subscribers sub ON sub.id = s.subscriber_id ` +
-            `WHERE ${where.join(' AND ')} ORDER BY s.id ASC LIMIT ?`,
-        )
-        .bind(...binds)
-        .all<{ id: number }>();
-      const last = results?.[results.length - 1];
-      const next = last && results.length === limit ? last.id : null;
-      return Response.json({ items: results ?? [], nextCursor: next });
+      const whereSql = `WHERE ${where.join(' AND ')}`;
+      const [page, count] = await Promise.all([
+        env.DB
+          .prepare(
+            `SELECT s.id, s.subscriber_id, sub.email, s.status, s.sent_at, s.error, s.message_id ` +
+              `FROM sends s LEFT JOIN subscribers sub ON sub.id = s.subscriber_id ` +
+              `${whereSql} ORDER BY s.id ASC LIMIT ? OFFSET ?`,
+          )
+          .bind(...binds, limit, offset)
+          .all(),
+        env.DB
+          .prepare(`SELECT COUNT(*) AS n FROM sends s ${whereSql}`)
+          .bind(...binds)
+          .first<{ n: number }>(),
+      ]);
+      const items = page.results ?? [];
+      const total = count?.n ?? 0;
+      return Response.json({
+        items,
+        total,
+        nextCursor: offset + items.length < total ? offset + limit : null,
+      });
     }
 
     if (m === 'POST' && sub === 'replay-failed') {
@@ -785,18 +825,34 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
 
   if (m === 'GET' && p === '/api/bounces') {
     const limit = clamp(Number(url.searchParams.get('limit') ?? '100'), 1, 500);
+    const offset = Math.max(0, Number(url.searchParams.get('cursor') ?? '0') || 0);
     const since = url.searchParams.get('since') ?? "datetime('now','-7 days')";
-    const { results } = await env.DB
-      .prepare(
-        `SELECT e.id, e.campaign_id, e.subscriber_id, sub.email, e.url AS status_code, e.ts ` +
-          `FROM events e LEFT JOIN subscribers sub ON sub.id = e.subscriber_id ` +
-          `WHERE e.type = 'bounce' AND e.ts > ${
-            since.startsWith('datetime') ? since : '?'
-          } ORDER BY e.ts DESC LIMIT ?`,
-      )
-      .bind(...(since.startsWith('datetime') ? [limit] : [since, limit]))
-      .all();
-    return Response.json({ items: results ?? [] });
+    // `since` is either a built-in datetime() expression (inlined) or a literal
+    // bound value. Build a shared WHERE so the page and count queries match.
+    const sinceExpr = since.startsWith('datetime') ? since : '?';
+    const whereSql = `WHERE e.type = 'bounce' AND e.ts > ${sinceExpr}`;
+    const sinceBind = since.startsWith('datetime') ? [] : [since];
+    const [page, count] = await Promise.all([
+      env.DB
+        .prepare(
+          `SELECT e.id, e.campaign_id, e.subscriber_id, sub.email, e.url AS status_code, e.ts ` +
+            `FROM events e LEFT JOIN subscribers sub ON sub.id = e.subscriber_id ` +
+            `${whereSql} ORDER BY e.ts DESC LIMIT ? OFFSET ?`,
+        )
+        .bind(...sinceBind, limit, offset)
+        .all(),
+      env.DB
+        .prepare(`SELECT COUNT(*) AS n FROM events e ${whereSql}`)
+        .bind(...sinceBind)
+        .first<{ n: number }>(),
+    ]);
+    const items = page.results ?? [];
+    const total = count?.n ?? 0;
+    return Response.json({
+      items,
+      total,
+      nextCursor: offset + items.length < total ? offset + limit : null,
+    });
   }
 
   // -------- logs --------

@@ -1,11 +1,16 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { api, BounceEvent } from '../api';
+import { useState } from 'react';
+import { api, BounceEvent, Page } from '../api';
+import { PAGE_SIZE, Pagination } from '../components/Pagination';
 
 export default function Bounces() {
+  const [page, setPage] = useState(0);
   const { data, isLoading } = useQuery({
-    queryKey: ['bounces'],
-    queryFn: () => api<{ items: BounceEvent[] }>('/api/bounces?limit=200'),
+    queryKey: ['bounces', page],
+    placeholderData: keepPreviousData,
+    queryFn: () =>
+      api<Page<BounceEvent>>(`/api/bounces?limit=${PAGE_SIZE}&cursor=${page * PAGE_SIZE}`),
   });
 
   return (
@@ -47,6 +52,15 @@ export default function Bounces() {
             </tbody>
           </table>
         </div>
+      )}
+      {!isLoading && (
+        <Pagination
+          page={page}
+          total={data?.total ?? 0}
+          itemCount={data?.items.length ?? 0}
+          busy={isLoading}
+          onPage={setPage}
+        />
       )}
     </div>
   );

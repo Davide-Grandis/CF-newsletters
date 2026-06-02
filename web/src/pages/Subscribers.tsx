@@ -1,8 +1,9 @@
 import { FormEvent, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, Page, Subscriber } from '../api';
 import { SortIcon } from './Newsletters';
 import { Tooltip } from '../components/Tooltip';
+import { PAGE_SIZE, Pagination } from '../components/Pagination';
 
 type SortKey = 'email' | 'name' | 'status' | 'verified' | 'bounce_count' | 'subscribed_at';
 type ImportResult = { added: number; duplicated: number };
@@ -12,14 +13,15 @@ export default function Subscribers({ newsletterId }: { newsletterId: string }) 
   const base = `/api/newsletters/${newsletterId}/subscribers`;
   const [status, setStatus] = useState('');
   const [q, setQ] = useState('');
-  const [cursor, setCursor] = useState<number>(0);
+  const [page, setPage] = useState(0);
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'email', dir: 'asc' });
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
   const list = useQuery({
-    queryKey: ['subs', newsletterId, status, q, cursor],
+    queryKey: ['subs', newsletterId, status, q, page],
+    placeholderData: keepPreviousData,
     queryFn: () => {
-      const sp = new URLSearchParams({ limit: '50', cursor: String(cursor) });
+      const sp = new URLSearchParams({ limit: String(PAGE_SIZE), cursor: String(page * PAGE_SIZE) });
       if (status) sp.set('status', status);
       if (q) sp.set('q', q);
       return api<Page<Subscriber>>(`${base}?${sp.toString()}`);
@@ -154,7 +156,7 @@ export default function Subscribers({ newsletterId }: { newsletterId: string }) 
       </form>
 
       <div className="flex gap-2">
-        <select value={status} onChange={(e) => { setStatus(e.target.value); setCursor(0); }} className={inputCls}>
+        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }} className={inputCls}>
           <option value="">All statuses</option>
           <option value="active">Active</option>
           <option value="unsubscribed">Unsubscribed</option>
@@ -163,7 +165,7 @@ export default function Subscribers({ newsletterId }: { newsletterId: string }) 
         </select>
         <input
           value={q}
-          onChange={(e) => { setQ(e.target.value); setCursor(0); }}
+          onChange={(e) => { setQ(e.target.value); setPage(0); }}
           placeholder="Search email or name"
           className={inputCls + ' flex-1'}
         />
@@ -211,18 +213,13 @@ export default function Subscribers({ newsletterId }: { newsletterId: string }) 
         </table>
       </div>
 
-      <div className="flex gap-2 justify-end text-sm">
-        <button
-          onClick={() => setCursor(0)}
-          disabled={cursor === 0}
-          className={pagerCls}
-        >First</button>
-        <button
-          onClick={() => list.data?.nextCursor && setCursor(Number(list.data.nextCursor))}
-          disabled={!list.data?.nextCursor}
-          className={pagerCls}
-        >Next →</button>
-      </div>
+      <Pagination
+        page={page}
+        total={list.data?.total ?? 0}
+        itemCount={list.data?.items.length ?? 0}
+        busy={list.isFetching}
+        onPage={setPage}
+      />
     </div>
   );
 }
@@ -266,9 +263,6 @@ function Th({
 
 const inputCls =
   'border border-slate-300 rounded px-2 py-1 text-sm bg-white text-slate-900 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100';
-
-const pagerCls =
-  'border border-slate-200 rounded px-3 py-1 disabled:opacity-40 dark:border-slate-700';
 
 export function StatusPill({ status }: { status: string }) {
   const cls: Record<string, string> = {

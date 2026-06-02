@@ -1,11 +1,16 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { useState } from 'react';
 import { api, Campaign, Page } from '../api';
+import { PAGE_SIZE, Pagination } from '../components/Pagination';
 
 export default function Campaigns() {
+  const [page, setPage] = useState(0);
   const { data, isLoading } = useQuery({
-    queryKey: ['campaigns'],
-    queryFn: () => api<Page<Campaign>>('/api/campaigns?limit=100'),
+    queryKey: ['campaigns', page],
+    placeholderData: keepPreviousData,
+    queryFn: () =>
+      api<Page<Campaign>>(`/api/campaigns?limit=${PAGE_SIZE}&cursor=${page * PAGE_SIZE}`),
   });
 
   return (
@@ -54,6 +59,15 @@ export default function Campaigns() {
             </tbody>
           </table>
         </div>
+      )}
+      {!isLoading && (
+        <Pagination
+          page={page}
+          total={data?.total ?? 0}
+          itemCount={data?.items.length ?? 0}
+          busy={isLoading}
+          onPage={setPage}
+        />
       )}
     </div>
   );

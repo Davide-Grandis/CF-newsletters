@@ -1,8 +1,9 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { api, Newsletter, Setting } from '../api';
 import { Tooltip } from '../components/Tooltip';
+import { PAGE_SIZE, Pagination } from '../components/Pagination';
 
 type SortKey = 'name' | 'inbound_address' | 'subscriber_count' | 'author_count' | 'enabled';
 
@@ -17,9 +18,12 @@ export default function Newsletters() {
   const [inboundLocal, setInboundLocal] = useState('');
   const [senderLocal, setSenderLocal] = useState('');
 
+  const [page, setPage] = useState(0);
   const list = useQuery({
     queryKey: ['newsletters'],
-    queryFn: () => api<{ items: Newsletter[] }>('/api/newsletters'),
+    // Newsletters are searched and sorted entirely client-side, so we fetch the
+    // full set once and paginate it locally below.
+    queryFn: () => api<{ items: Newsletter[] }>('/api/newsletters?limit=1000'),
   });
 
   // Sending domain and the default sender come from the global settings; the
@@ -50,6 +54,10 @@ export default function Newsletters() {
   function toggleSort(key: SortKey) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
   }
+
+  // Reset to the first page whenever the filtered/sorted result set changes.
+  useEffect(() => setPage(0), [query, sort]);
+  const pageItems = items.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   const create = useMutation({
     mutationFn: (body: { name: string; inbound_address: string; from_address?: string }) =>
@@ -203,7 +211,7 @@ export default function Newsletters() {
             {list.isLoading && (
               <tr><td colSpan={5} className="p-4 text-center text-slate-500 dark:text-slate-400">Loading…</td></tr>
             )}
-            {items.map((n) => (
+            {pageItems.map((n) => (
               <tr key={n.id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="p-2">
                   <Link to={`/newsletters/${n.id}`} className="font-medium text-slate-900 hover:underline dark:text-slate-100">
@@ -235,6 +243,13 @@ export default function Newsletters() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        page={page}
+        total={items.length}
+        itemCount={pageItems.length}
+        onPage={setPage}
+      />
     </div>
   );
 }

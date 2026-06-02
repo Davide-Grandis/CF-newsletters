@@ -1,9 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, CampaignDetail as Detail, Page, Send, TimeseriesRow } from '../api';
 import { StatusPill } from './Subscribers';
 import { CampaignStatus } from './Campaigns';
+import { PAGE_SIZE, Pagination } from '../components/Pagination';
 import { useState, type ReactNode } from 'react';
 
 export default function CampaignDetail() {
@@ -115,11 +116,12 @@ function pivotTimeseries(rows: TimeseriesRow[]): Record<string, number | string>
 
 function SendsTable({ campaignId }: { campaignId: string }) {
   const [status, setStatus] = useState('failed');
-  const [cursor, setCursor] = useState(0);
+  const [page, setPage] = useState(0);
   const sends = useQuery({
-    queryKey: ['campaign-sends', campaignId, status, cursor],
+    queryKey: ['campaign-sends', campaignId, status, page],
+    placeholderData: keepPreviousData,
     queryFn: () => {
-      const sp = new URLSearchParams({ limit: '50', cursor: String(cursor) });
+      const sp = new URLSearchParams({ limit: String(PAGE_SIZE), cursor: String(page * PAGE_SIZE) });
       if (status) sp.set('status', status);
       return api<Page<Send>>(`/api/campaigns/${campaignId}/sends?${sp.toString()}`);
     },
@@ -130,7 +132,7 @@ function SendsTable({ campaignId }: { campaignId: string }) {
         <h2 className="text-base font-medium">Sends</h2>
         <select
           value={status}
-          onChange={(e) => { setStatus(e.target.value); setCursor(0); }}
+          onChange={(e) => { setStatus(e.target.value); setPage(0); }}
           className="border border-slate-300 rounded px-2 py-1 text-xs ml-auto bg-white text-slate-900 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100"
         >
           <option value="">All</option>
@@ -164,13 +166,14 @@ function SendsTable({ campaignId }: { campaignId: string }) {
           </tbody>
         </table>
       </div>
-      <div className="flex justify-end gap-2 text-sm mt-2">
-        <button onClick={() => setCursor(0)} disabled={cursor === 0} className="border border-slate-200 rounded px-3 py-1 disabled:opacity-40 dark:border-slate-700">First</button>
-        <button
-          onClick={() => sends.data?.nextCursor && setCursor(Number(sends.data.nextCursor))}
-          disabled={!sends.data?.nextCursor}
-          className="border border-slate-200 rounded px-3 py-1 disabled:opacity-40 dark:border-slate-700"
-        >Next →</button>
+      <div className="mt-2">
+        <Pagination
+          page={page}
+          total={sends.data?.total ?? 0}
+          itemCount={sends.data?.items.length ?? 0}
+          busy={sends.isFetching}
+          onPage={setPage}
+        />
       </div>
     </section>
   );
