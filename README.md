@@ -18,7 +18,7 @@ raw archives in R2.
 | `tracker`   | HTTP           | Pixel, signed click redirect, unsubscribe, attachment download |
 | `bounce`    | Email handler  | Parse DSN/ARF on `bounce+*@`, update subscriber + events       |
 | `cleanup`   | Cron Trigger   | Retention: prune R2 + D1                                       |
-| `admin`     | HTTP + SPA     | JSON API + browser GUI for subscribers, campaigns, bounces     |
+| `admin`     | HTTP + SPA     | JSON API + GUI: newsletters, subscribers, authors, campaigns, bounces |
 
 ## Layout
 
@@ -57,10 +57,20 @@ wrangler r2 object put newsletter-admin/logoenea1.png \
 Pages:
 
 - **Dashboard** — subscriber/campaign/event totals, warmup quota, last-7-day rollup.
-- **Subscribers** — paginated search, add/unsubscribe, CSV import.
+- **Newsletters** — create/rename/delete newsletters (each with its own inbound
+  address, subscribers and authors); sortable, searchable list. Email Routing
+  rules are kept in sync automatically.
+- **Subscribers** (per newsletter) — paginated, sortable search; add manually;
+  CSV import (position-based, with duplicate detection) and CSV export; tracks a
+  `verified` flag and delivery `status`.
+- **Authors** (per newsletter) — manage the allow-list of inbound senders.
 - **Campaigns** — list and per-campaign drill-down with stacked event chart and per-recipient `sends` table.
 - **Bounces** — last 7 days, status code colour-coded.
-- **Authors** — manage the allow-list of inbound newsletter senders.
+
+Each operator's **theme** (light/dark) is saved server-side in the `admins`
+table and follows them across devices; new operators are seeded with their OS
+colour-scheme preference on first login (`GET /api/me` returns it,
+`PUT /api/preferences` updates it).
 
 Build the SPA before deploying the admin worker:
 
@@ -108,7 +118,10 @@ Update each `workers/*/wrangler.toml` with the IDs that come back, then:
 # Secrets
 wrangler secret put LINK_SIGNING_KEY        --name tracker
 wrangler secret put ATTACHMENT_SIGNING_KEY  --name tracker
-# (the admin worker has no secret — protect it with Cloudflare Access)
+# Admin worker: protect it with Cloudflare Access (no auth secret of its own).
+# Optional — lets it auto-manage Email Routing rules for newsletter inbound
+# addresses (token needs Zone → Email Routing Rules → Edit):
+(cd workers/admin && wrangler secret put CF_API_TOKEN)
 ```
 
 ## Deploy
@@ -200,12 +213,20 @@ Author ──▶ Email Routing ──▶ Ingest Worker (Email handler)
 - **R2**: `newsletter-archive` (raw inbound + attachments + raw event logs)
 
 ## 3. D1 Schema — `newsletter_db`
-- `subscribers(id, email UNIQUE, name, status, subscribed_at, unsubscribed_at, bounce_count, last_bounce_at, token)`
-- `campaigns(id, subject, html, text, sent_by, created_at, status, total_recipients, sent_count, failed_count, attachment_count, attachment_total_bytes, link_mode)`
+
+The system is **multi-tenant**: a `newsletters` row is the parent of its own
+authors, subscribers and campaigns (all scoped by `newsletter_id`).
+
+- `newsletters(id, name, inbound_address UNIQUE, enabled, created_at)`
+- `authors(newsletter_id, email, name, created_at, PRIMARY KEY(newsletter_id, email))` — per-newsletter inbound-sender allow-list.
+- `subscribers(id, newsletter_id, email, name, verified, status, subscribed_at, unsubscribed_at, bounce_count, last_bounce_at, token, UNIQUE(newsletter_id, email))`
+- `campaigns(id, newsletter_id, subject, html, text, sent_by, created_at, status, total_recipients, sent_count, failed_count, attachment_count, attachment_total_bytes, link_mode)`
 - `attachments(id, campaign_id, r2_key, filename, content_type, size, sha256, content_id NULL, disposition ['attachment'|'inline'], created_at)`
 - `sends(id, campaign_id, subscriber_id, status, queued_at, sent_at, error, message_id, UNIQUE(campaign_id, subscriber_id))`
 - `events(id, campaign_id, subscriber_id, type ['open'|'click'|'bounce'|'complaint'|'unsubscribe'|'download'], attachment_id NULL, url, ts, ua, ip)`
-- Indexes: `subscribers(status)`, `sends(campaign_id, status)`, `events(campaign_id, type)`, `attachments(campaign_id)`.
+- `admins(email PK, theme ['light'|'dark'], created_at, updated_at)` — console operators' saved UI preferences; identity itself comes from Cloudflare Access.
+- Indexes: `subscribers(status)`, `subscribers(newsletter_id)`, `campaigns(newsletter_id)`, `sends(campaign_id, status)`, `events(campaign_id, type)`, `attachments(campaign_id)`.
+- Cascades: deleting a newsletter removes its authors/subscribers/campaigns; deleting a campaign removes its attachments/sends/events (`ON DELETE CASCADE`).
 
 ## 4. Queue — `newsletter-queue`
 - Message: `{ campaignId, batch: [{subscriberId, email, name, token}] }` — recipients only; attachments referenced by `campaignId` (avoids 128 KB message limit).
@@ -264,8 +285,15 @@ Author ──▶ Email Routing ──▶ Ingest Worker (Email handler)
 ### e) `cleanup-worker` (Cron Trigger)
 - Daily: delete R2 attachments and `attachments`/`campaigns` rows older than `RETENTION_DAYS` (cascade prunes `sends`/`events`).
 
-### f) `admin-worker` (HTTP, optional)
-- Bearer-token guarded endpoints: subscriber CRUD, campaign list, campaign stats.
+### f) `admin-worker` (HTTP + SPA)
+- Serves the React admin GUI and a JSON API under `/api/*`.
+- **Auth via Cloudflare Access** (no bearer token): trusts the
+  `Cf-Access-Authenticated-User-Email` header injected at the edge; any
+  `/api/*` request without it gets 401.
+- Endpoints: newsletter CRUD (with Email Routing rule sync), per-newsletter
+  subscriber CRUD + CSV import/export, author allow-list CRUD, campaign list +
+  stats, bounces, warmup quota (`/api/quota`), identity (`/api/me`) and the
+  operator's theme preference (`PUT /api/preferences`).
 
 ## 7. Repo Layout
 
@@ -294,7 +322,7 @@ newsletter/
 
 ## 8. Configuration (vars / secrets)
 - Vars: `FROM_ADDRESS`, `TRACKING_BASE_URL`, `BOUNCE_DOMAIN`, `BATCH_SIZE`, `MAX_ATTACHMENT_BYTES`, `MAX_TOTAL_ATTACHMENT_BYTES`, `MAX_ATTACHMENT_COUNT`, `ALLOWED_MIME`, `BLOCKED_EXTENSIONS`, `ATTACHMENT_LINK_THRESHOLD_BYTES`, `MAX_RAW_BYTES`, `RETENTION_DAYS`, `HARD_BOUNCE_THRESHOLD`, `SOFT_BOUNCE_THRESHOLD`.
-- Secrets (`wrangler secret put`): `LINK_SIGNING_KEY`, `ATTACHMENT_SIGNING_KEY`. The admin worker has no secret — front it with a Cloudflare Access application.
+- Secrets (`wrangler secret put`): `LINK_SIGNING_KEY`, `ATTACHMENT_SIGNING_KEY`. The admin worker has no auth secret — front it with a Cloudflare Access application; it optionally takes `CF_API_TOKEN` to auto-manage Email Routing rules.
 
 ## 9. Key Flows
 

@@ -75,6 +75,17 @@ subscribers receive a campaign.
 The separate **verified** flag indicates whether the address has been confirmed;
 it is independent of status and defaults to False for newly added subscribers.
 
+## Appearance (theme)
+
+Use the sun/moon button in the header to switch between **light** and **dark**
+themes. Your choice is **saved to your account**, so it follows you to any
+browser or device the next time you sign in — the server-stored preference is
+the source of truth.
+
+The first time you sign in (before any preference is stored) the console adopts
+your operating system's colour-scheme setting and saves that as your starting
+preference. Changing the theme afterwards updates the stored value immediately.
+
 ## Database schema
 
 A single Cloudflare D1 database (`newsletter_db`) backs everything. Core tables:
@@ -88,6 +99,7 @@ A single Cloudflare D1 database (`newsletter_db`) backs everything. Core tables:
 | `attachments` | Files for a campaign, deduplicated by SHA-256 and stored in R2 (`r2_key`). |
 | `sends` | Per-recipient delivery record for each campaign (status, message id, error). |
 | `events` | Engagement/lifecycle events: open, click, bounce, complaint, unsubscribe, download. |
+| `admins` | Console operators and their saved UI preferences (currently `theme`). Keyed by `email`; a row is created on first login, seeded with the detected OS theme. |
 
 Authors, subscribers, attachments, sends and events are removed automatically
 when their parent newsletter or campaign is deleted (`ON DELETE CASCADE`).
