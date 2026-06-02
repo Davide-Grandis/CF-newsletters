@@ -52,8 +52,7 @@ export default function Logs() {
         <p className="mt-3 text-sm text-slate-500 dark:text-slate-400 max-w-3xl">
           Unified activity feed across the whole pipeline: the ingest worker firing on inbound
           email, queue enqueue details, and consumer send activity — merged with recipient
-          engagement events (open, click, bounce, unsubscribe, download). Newest first; use the
-          filters and search below.
+          engagement events (open, click, bounce, unsubscribe, download).
         </p>
       </div>
 
