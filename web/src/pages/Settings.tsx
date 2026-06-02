@@ -34,7 +34,7 @@ const SECTIONS: Section[] = [
     title: 'Sending identity',
     description: 'How outbound mail is addressed and where engagement is tracked.',
     fields: [
-      { key: 'FROM_ADDRESS', label: 'From address', help: 'From header for outbound mail, e.g. "Newsletter <newsletter@example.com>".' },
+      { key: 'FROM_ADDRESS', label: 'Default from address', help: 'Default From header for outbound mail, e.g. "Newsletter <newsletter@example.com>". Used when a newsletter does not specify its own sender.' },
       { key: 'BOUNCE_DOMAIN', label: 'Bounce domain', help: 'Domain used for VERP bounce return-path addresses (bounce+<id>@domain).' },
       { key: 'TRACKING_BASE_URL', label: 'Tracking base URL', help: 'Base URL of the tracker worker for opens, clicks, unsubscribe and downloads.' },
     ],
