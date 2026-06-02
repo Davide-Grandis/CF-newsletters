@@ -1,7 +1,7 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { api, Newsletter } from '../api';
+import { api, Newsletter, Setting } from '../api';
 import { Tooltip } from '../components/Tooltip';
 
 type SortKey = 'name' | 'inbound_address' | 'subscriber_count' | 'author_count' | 'enabled';
@@ -14,10 +14,23 @@ export default function Newsletters() {
   const [showSearch, setShowSearch] = useState(false);
   const [query, setQuery] = useState('');
 
+  const [inboundLocal, setInboundLocal] = useState('');
+  const [senderLocal, setSenderLocal] = useState('');
+
   const list = useQuery({
     queryKey: ['newsletters'],
     queryFn: () => api<{ items: Newsletter[] }>('/api/newsletters'),
   });
+
+  // Sending domain and the default sender come from the global settings; the
+  // address inputs only take the local part and the domain is appended.
+  const settings = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api<{ settings: Setting[] }>('/api/settings'),
+  });
+  const settingValue = (k: string) => settings.data?.settings.find((s) => s.key === k)?.value ?? '';
+  const domain = settingValue('BASE_DOMAIN');
+  const defaultSenderLocal = localPart(settingValue('FROM_ADDRESS'));
 
   const items = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -61,14 +74,22 @@ export default function Newsletters() {
     setErr(null);
     const fd = new FormData(e.currentTarget);
     const name = String(fd.get('name') ?? '').trim();
-    const inbound_address = String(fd.get('inbound_address') ?? '').trim();
-    const from_address = String(fd.get('from_address') ?? '').trim();
-    if (!name || !inbound_address) return;
+    const inbound = inboundLocal.trim();
+    const sender = senderLocal.trim();
+    if (!name || !inbound) return;
     const form = e.currentTarget;
     create.mutate(
-      { name, inbound_address, from_address: from_address || undefined },
       {
-        onSuccess: () => form.reset(),
+        name,
+        inbound_address: `${inbound}@${domain}`,
+        from_address: sender ? `${sender}@${domain}` : undefined,
+      },
+      {
+        onSuccess: () => {
+          form.reset();
+          setInboundLocal('');
+          setSenderLocal('');
+        },
         onError: (e) => setErr((e as Error).message),
       },
     );
@@ -100,24 +121,19 @@ export default function Newsletters() {
           <label className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Name</label>
           <input name="name" required placeholder="Weekly digest" className={inputCls} />
         </div>
-        <div className="flex-1 min-w-[220px]">
+        <div className="flex-1 min-w-[200px]">
           <label className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Inbound address</label>
-          <input
-            name="inbound_address"
-            type="email"
-            required
-            placeholder="digest@eneanewsletter.it"
-            className={inputCls}
-          />
+          <LocalPartInput value={inboundLocal} onChange={setInboundLocal} domain={domain} placeholder="digest" />
         </div>
-        <div className="flex-1 min-w-[220px]">
+        <div className="flex-1 min-w-[200px]">
           <label className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
             Sender <span className="normal-case tracking-normal text-slate-400">(optional)</span>
           </label>
-          <input
-            name="from_address"
-            placeholder="News <digest@eneanewsletter.it>"
-            className={inputCls}
+          <LocalPartInput
+            value={senderLocal}
+            onChange={setSenderLocal}
+            domain={domain}
+            placeholder={defaultSenderLocal || 'default'}
           />
         </div>
         <button
@@ -304,3 +320,53 @@ export function Toggle({ on, busy, onChange }: { on: boolean; busy?: boolean; on
 
 const inputCls =
   'block w-full border border-slate-300 rounded px-2 py-1 text-sm mt-0.5 bg-white text-slate-900 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100';
+
+// Extracts the local part (before @) from an address, ignoring any display
+// name, e.g. 'News <news@example.com>' -> 'news'.
+export function localPart(addr: string): string {
+  if (!addr) return '';
+  const m = /<([^>]+)>/.exec(addr);
+  const email = (m ? m[1]! : addr).trim();
+  const at = email.indexOf('@');
+  return at >= 0 ? email.slice(0, at) : email;
+}
+
+// Address input that only accepts the local part; the fixed sending domain is
+// shown as a non-editable suffix. Typing an '@' (and anything after) is
+// stripped automatically.
+export function LocalPartInput({
+  value,
+  onChange,
+  domain,
+  placeholder,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  domain: string;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-stretch rounded border overflow-hidden mt-0.5 ${
+        disabled
+          ? 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/40'
+          : 'border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-800'
+      }`}
+    >
+      <input
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value.replace(/@.*$/, '').trimStart())}
+        placeholder={placeholder}
+        className="flex-1 min-w-0 px-2 py-1 text-sm bg-transparent text-slate-900 outline-none disabled:cursor-not-allowed disabled:text-slate-500 dark:text-slate-100 dark:disabled:text-slate-400"
+      />
+      {domain && (
+        <span className="flex items-center px-2 text-sm text-slate-400 bg-slate-50 border-l border-slate-200 select-none dark:bg-slate-800/60 dark:border-slate-700 dark:text-slate-500">
+          @{domain}
+        </span>
+      )}
+    </div>
+  );
+}

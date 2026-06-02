@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, Newsletter } from '../api';
+import { api, Newsletter, Setting } from '../api';
 import Subscribers from './Subscribers';
 import Authors from './Authors';
+import { LocalPartInput, localPart } from './Newsletters';
 
 type Tab = 'subscribers' | 'authors';
 
@@ -21,6 +22,15 @@ export default function NewsletterDetail() {
     queryFn: () => api<Newsletter>(`/api/newsletters/${id}`),
   });
 
+  // Fixed sending domain + default sender come from global settings.
+  const settings = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api<{ settings: Setting[] }>('/api/settings'),
+  });
+  const settingValue = (k: string) => settings.data?.settings.find((s) => s.key === k)?.value ?? '';
+  const domain = settingValue('BASE_DOMAIN');
+  const defaultSenderLocal = localPart(settingValue('FROM_ADDRESS'));
+
   const patch = useMutation({
     mutationFn: (body: Partial<Pick<Newsletter, 'name' | 'inbound_address' | 'from_address'>> & { enabled?: boolean }) =>
       api<{ routing_warning?: string }>(`/api/newsletters/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
@@ -30,6 +40,8 @@ export default function NewsletterDetail() {
       qc.invalidateQueries({ queryKey: ['newsletters'] });
     },
   });
+  const saveSettings = (body: { name?: string; inbound_address?: string; from_address?: string | null }) =>
+    patch.mutateAsync(body);
 
   const del = useMutation({
     mutationFn: () => api(`/api/newsletters/${id}`, { method: 'DELETE' }),
@@ -61,7 +73,9 @@ export default function NewsletterDetail() {
 
       <Settings
         n={n}
-        onSave={(body) => patch.mutate(body)}
+        domain={domain}
+        defaultSenderLocal={defaultSenderLocal}
+        onSave={saveSettings}
         saving={patch.isPending}
         onDelete={() => {
           setDelErr(null);
@@ -117,55 +131,120 @@ export default function NewsletterDetail() {
 
 function Settings({
   n,
+  domain,
+  defaultSenderLocal,
   onSave,
   saving,
   onDelete,
 }: {
   n: Newsletter;
-  onSave: (body: { name?: string; inbound_address?: string; from_address?: string | null }) => void;
+  domain: string;
+  defaultSenderLocal: string;
+  onSave: (body: { name?: string; inbound_address?: string; from_address?: string | null }) => Promise<unknown>;
   saving: boolean;
   onDelete: () => void;
 }) {
+  // Fields are locked until the user clicks Edit (mirrors the Settings page),
+  // limiting the chance of accidental changes.
+  const [editing, setEditing] = useState(false);
   const [name, setName] = useState(n.name);
-  const [addr, setAddr] = useState(n.inbound_address);
-  const [from, setFrom] = useState(n.from_address ?? '');
+  const [inbound, setInbound] = useState(localPart(n.inbound_address));
+  const [sender, setSender] = useState(localPart(n.from_address ?? ''));
+  const [error, setError] = useState<string | null>(null);
+
+  function reset() {
+    setName(n.name);
+    setInbound(localPart(n.inbound_address));
+    setSender(localPart(n.from_address ?? ''));
+    setError(null);
+  }
+
   const dirty =
     name.trim() !== n.name ||
-    addr.trim() !== n.inbound_address ||
-    from.trim() !== (n.from_address ?? '');
+    inbound.trim() !== localPart(n.inbound_address) ||
+    sender.trim() !== localPart(n.from_address ?? '');
+
+  async function save() {
+    if (!dirty) {
+      setEditing(false);
+      return;
+    }
+    setError(null);
+    try {
+      await onSave({
+        name: name.trim(),
+        inbound_address: `${inbound.trim()}@${domain}`,
+        // Empty string clears the override (falls back to the global sender).
+        from_address: sender.trim() ? `${sender.trim()}@${domain}` : '',
+      });
+      setEditing(false);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   return (
     <section className="bg-white border border-slate-200 rounded p-3 dark:bg-slate-900 dark:border-slate-800">
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex-1 min-w-[160px]">
           <label className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Name</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
-        </div>
-        <div className="flex-1 min-w-[220px]">
-          <label className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Inbound address</label>
-          <input value={addr} onChange={(e) => setAddr(e.target.value)} type="email" className={inputCls} />
-        </div>
-        <div className="flex-1 min-w-[220px]">
-          <label className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            Sender <span className="normal-case tracking-normal text-slate-400">(optional)</span>
-          </label>
           <input
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            placeholder="falls back to default sender"
+            value={name}
+            disabled={!editing}
+            onChange={(e) => setName(e.target.value)}
             className={inputCls}
           />
         </div>
-        <button
-          type="button"
-          disabled={!dirty || saving}
-          onClick={() =>
-            onSave({ name: name.trim(), inbound_address: addr.trim(), from_address: from.trim() })
-          }
-          className="bg-slate-900 text-white text-sm rounded px-3 py-1.5 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
-        >
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+        <div className="flex-1 min-w-[200px]">
+          <label className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Inbound address</label>
+          <LocalPartInput value={inbound} onChange={setInbound} domain={domain} disabled={!editing} />
+        </div>
+        <div className="flex-1 min-w-[200px]">
+          <label className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            Sender <span className="normal-case tracking-normal text-slate-400">(optional)</span>
+          </label>
+          <LocalPartInput
+            value={sender}
+            onChange={setSender}
+            domain={domain}
+            disabled={!editing}
+            placeholder={defaultSenderLocal || 'default'}
+          />
+        </div>
+        {editing ? (
+          <>
+            <button
+              type="button"
+              disabled={!dirty || saving}
+              onClick={save}
+              className="bg-slate-900 text-white text-sm rounded px-3 py-1.5 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => {
+                reset();
+                setEditing(false);
+              }}
+              className="text-sm rounded px-3 py-1.5 border border-slate-300 text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              reset();
+              setEditing(true);
+            }}
+            className="text-sm rounded px-3 py-1.5 border border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Edit
+          </button>
+        )}
         <button
           type="button"
           onClick={onDelete}
@@ -174,9 +253,10 @@ function Settings({
           Delete
         </button>
       </div>
+      {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
       <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
         Inbound mail to <code className="bg-slate-100 px-1 rounded dark:bg-slate-800">{n.inbound_address}</code> is routed to the ingest worker automatically via an Email Routing rule.
-        The <strong>Sender</strong> is the outgoing <code className="bg-slate-100 px-1 rounded dark:bg-slate-800">From:</code> for this newsletter (must be on the sending domain); leave empty to use the global default.
+        The <strong>Sender</strong> is the outgoing <code className="bg-slate-100 px-1 rounded dark:bg-slate-800">From:</code> for this newsletter; leave empty to use the global default.
       </p>
     </section>
   );
@@ -199,4 +279,4 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 }
 
 const inputCls =
-  'block w-full border border-slate-300 rounded px-2 py-1 text-sm mt-0.5 bg-white text-slate-900 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100';
+  'block w-full border border-slate-300 rounded px-2 py-1 text-sm mt-0.5 bg-white text-slate-900 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-100 disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed disabled:border-slate-200 dark:disabled:bg-slate-800/40 dark:disabled:text-slate-400 dark:disabled:border-slate-700';
