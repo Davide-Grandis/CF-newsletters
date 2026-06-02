@@ -97,26 +97,28 @@ export default function Logs() {
       ) : (
         <>
           <div className="bg-white border border-slate-200 rounded overflow-hidden dark:bg-slate-900 dark:border-slate-800">
-            <table className="w-full text-sm">
+            <table className="w-full text-base">
               <thead className="bg-slate-50 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
                 <tr>
-                  <th className="text-left p-2 whitespace-nowrap">Time (UTC)</th>
-                  <th className="text-left p-2">Level</th>
-                  <th className="text-left p-2">Source</th>
-                  <th className="text-left p-2">Event</th>
-                  <th className="text-left p-2">Details</th>
+                  <th className="text-left p-3 whitespace-nowrap">Time (UTC)</th>
+                  <th className="text-left p-3">Level</th>
+                  <th className="text-left p-3">Newsletter</th>
+                  <th className="text-left p-3">Source</th>
+                  <th className="text-left p-3">Event</th>
+                  <th className="text-left p-3">Details</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((r) => (
                   <tr key={`${r.kind}-${r.id}`} className="border-t border-slate-100 align-top dark:border-slate-800">
-                    <td className="p-2 whitespace-nowrap text-slate-500 dark:text-slate-400">{r.ts}</td>
-                    <td className="p-2"><LevelBadge level={r.level} /></td>
-                    <td className="p-2 text-slate-500 dark:text-slate-400">{r.source}</td>
-                    <td className="p-2 font-mono text-xs">{r.event}</td>
-                    <td className="p-2">
+                    <td className="p-3 whitespace-nowrap text-slate-500 dark:text-slate-400">{r.ts}</td>
+                    <td className="p-3"><LevelBadge level={r.level} /></td>
+                    <td className="p-3 whitespace-nowrap text-slate-600 dark:text-slate-300">{r.newsletter_name ?? '—'}</td>
+                    <td className="p-3 text-slate-500 dark:text-slate-400">{r.source}</td>
+                    <td className="p-3 font-mono text-sm">{r.event}</td>
+                    <td className="p-3">
                       {r.message && <div className="text-slate-700 dark:text-slate-200">{r.message}</div>}
-                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-slate-500 dark:text-slate-400">
                         {r.email && <span className="font-mono">{r.email}</span>}
                         {r.kind === 'event' && r.detail && <span className="truncate max-w-md">{r.detail}</span>}
                         {r.campaign_id && (
@@ -132,7 +134,7 @@ export default function Logs() {
                   </tr>
                 ))}
                 {items.length === 0 && (
-                  <tr><td colSpan={5} className="p-4 text-center text-slate-500 dark:text-slate-400">No log entries match.</td></tr>
+                  <tr><td colSpan={6} className="p-4 text-center text-slate-500 dark:text-slate-400">No log entries match.</td></tr>
                 )}
               </tbody>
             </table>

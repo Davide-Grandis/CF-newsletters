@@ -815,15 +815,15 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
 
     const inner =
       "SELECT 'log' AS kind, l.id AS id, l.ts AS ts, l.level AS level, l.source AS source, " +
-        'l.event AS event, l.campaign_id AS campaign_id, NULL AS subscriber_id, NULL AS email, ' +
-        'l.message AS message, l.detail AS detail ' +
+        'l.event AS event, l.campaign_id AS campaign_id, l.newsletter_id AS newsletter_id, ' +
+        'NULL AS subscriber_id, NULL AS email, l.message AS message, l.detail AS detail ' +
         'FROM logs l ' +
       'UNION ALL ' +
       "SELECT 'event' AS kind, e.id AS id, e.ts AS ts, " +
         "CASE WHEN e.type IN ('bounce','complaint') THEN 'warn' ELSE 'info' END AS level, " +
         "CASE WHEN e.type IN ('bounce','complaint') THEN 'bounce' ELSE 'tracker' END AS source, " +
-        'e.type AS event, e.campaign_id AS campaign_id, e.subscriber_id AS subscriber_id, sub.email AS email, ' +
-        'NULL AS message, e.url AS detail ' +
+        'e.type AS event, e.campaign_id AS campaign_id, NULL AS newsletter_id, ' +
+        'e.subscriber_id AS subscriber_id, sub.email AS email, NULL AS message, e.url AS detail ' +
         'FROM events e LEFT JOIN subscribers sub ON sub.id = e.subscriber_id';
 
     const conds: string[] = [];
@@ -839,12 +839,18 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
     if (q) {
       const like = `%${q}%`;
       conds.push(
-        '(f.event LIKE ? OR f.message LIKE ? OR f.campaign_id LIKE ? OR f.email LIKE ? OR f.detail LIKE ?)',
+        '(f.event LIKE ? OR f.message LIKE ? OR f.campaign_id LIKE ? OR f.email LIKE ? OR f.detail LIKE ? OR n.name LIKE ?)',
       );
-      binds.push(like, like, like, like, like);
+      binds.push(like, like, like, like, like, like);
     }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
-    const sql = `SELECT * FROM (${inner}) f ${where} ORDER BY f.ts DESC, f.id DESC LIMIT ? OFFSET ?`;
+    // Resolve the newsletter name from the log's own newsletter_id when present
+    // (ingest entries), otherwise via the campaign (consumer entries & events).
+    const sql =
+      `SELECT f.*, n.name AS newsletter_name FROM (${inner}) f ` +
+      'LEFT JOIN campaigns c ON c.id = f.campaign_id ' +
+      'LEFT JOIN newsletters n ON n.id = COALESCE(f.newsletter_id, c.newsletter_id) ' +
+      `${where} ORDER BY f.ts DESC, f.id DESC LIMIT ? OFFSET ?`;
     const { results } = await env.DB.prepare(sql).bind(...binds, limit, offset).all();
     const items = results ?? [];
     return Response.json({ items, nextCursor: items.length === limit ? offset + limit : null });

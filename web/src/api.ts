@@ -125,6 +125,8 @@ export interface LogRow {
   source: string;
   event: string;
   campaign_id: string | null;
+  newsletter_id: string | null;
+  newsletter_name: string | null;
   subscriber_id: number | null;
   email: string | null;
   message: string | null;
