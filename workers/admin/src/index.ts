@@ -905,6 +905,7 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
       .prepare(sql)
       .bind(...binds, EXPORT_CAP)
       .all<{
+        kind: string;
         ts: string;
         level: string;
         source: string;
@@ -916,22 +917,27 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
         message: string | null;
         detail: string | null;
       }>();
-    const header = 'Time (UTC),Level,Source,Event,Newsletter,Campaign,Email,Description,Detail';
-    const lines = (results ?? []).map((r) =>
-      [
+    // Mirror the table columns, with Campaign ID inserted right after the
+    // campaign name. Description matches the table: the log message, or for
+    // engagement events the recipient email and event detail.
+    const header = 'Time (UTC),Level,Newsletter,Campaign,Campaign ID,Source,Event,Description';
+    const lines = (results ?? []).map((r) => {
+      const description =
+        r.message ??
+        (r.kind === 'event' ? [r.email, r.detail].filter(Boolean).join(' — ') : '');
+      return [
         r.ts ?? '',
         r.level ?? '',
-        r.source ?? '',
-        r.event ?? '',
         r.newsletter_name ?? '',
         r.campaign_subject ?? '',
-        r.email ?? '',
-        r.message ?? '',
-        r.detail ?? '',
+        r.campaign_id ?? '',
+        r.source ?? '',
+        r.event ?? '',
+        description,
       ]
         .map(csvCell)
-        .join(','),
-    );
+        .join(',');
+    });
     const csv = [header, ...lines].join('\r\n') + '\r\n';
     const stamp = new Date().toISOString().slice(0, 10);
     return new Response(csv, {
