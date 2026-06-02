@@ -153,9 +153,9 @@ function Layout() {
   );
 }
 
-const APP_VERSION = '0.1';
+const APP_VERSION = '0.2';
 const CREATED_DATE = 'Apr 28, 2026';
-const LAST_UPDATED = 'Jun 1, 2026';
+const LAST_UPDATED = 'Jun 2, 2026';
 
 function Footer() {
   return (
