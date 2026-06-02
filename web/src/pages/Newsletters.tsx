@@ -115,13 +115,10 @@ export default function Newsletters() {
             subscribers.
           </span>
           <br />
-          <span className="whitespace-nowrap">
-            Creating, renaming, enabling/disabling or deleting a newsletter automatically synchronizes the matching Cloudflare Email Routing rule (disabling a newsletter disables its rule).
-          </span>
-          <br />
           <span className="inline-block max-w-3xl">
-            The ingest worker also re-checks the enabled flag as a safety net, in case the
-            Cloudflare rule is changed manually.
+            Creating, renaming, enabling/disabling or deleting a newsletter automatically synchronizes
+            the matching Cloudflare Email Routing rule, including disabling the rule when disabling a
+            newsletter here. In cases of conflicts the settings below here win.
           </span>
         </p>
       </div>
