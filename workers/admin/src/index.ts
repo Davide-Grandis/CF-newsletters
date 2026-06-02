@@ -847,7 +847,7 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
     // Resolve the newsletter name from the log's own newsletter_id when present
     // (ingest entries), otherwise via the campaign (consumer entries & events).
     const sql =
-      `SELECT f.*, n.name AS newsletter_name FROM (${inner}) f ` +
+      `SELECT f.*, n.name AS newsletter_name, c.subject AS campaign_subject FROM (${inner}) f ` +
       'LEFT JOIN campaigns c ON c.id = f.campaign_id ' +
       'LEFT JOIN newsletters n ON n.id = COALESCE(f.newsletter_id, c.newsletter_id) ' +
       `${where} ORDER BY f.ts DESC, f.id DESC LIMIT ? OFFSET ?`;

@@ -114,10 +114,10 @@ export default function Logs() {
                     <td className="px-3 py-1 whitespace-nowrap text-slate-500 dark:text-slate-400">{r.ts}</td>
                     <td className="px-3 py-1"><LevelBadge level={r.level} /></td>
                     <td className="px-3 py-1 whitespace-nowrap text-slate-600 dark:text-slate-300">{r.newsletter_name ?? '—'}</td>
-                    <td className="px-3 py-1 whitespace-nowrap">
+                    <td className="px-3 py-1">
                       {r.campaign_id ? (
                         <Link to={`/campaigns/${r.campaign_id}`} className="text-slate-500 hover:underline dark:text-slate-400">
-                          {r.campaign_id.slice(0, 8)}…
+                          {r.campaign_subject || '(no subject)'}
                         </Link>
                       ) : (
                         <span className="text-slate-400 dark:text-slate-600">—</span>
