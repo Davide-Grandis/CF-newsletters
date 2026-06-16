@@ -9,6 +9,35 @@ links) and sends it through the `SEND_EMAIL` Email Sending (beta) binding.
 Bounces, opens, clicks, downloads and unsubscribes are logged to D1, with
 raw archives in R2.
 
+## Table of Contents
+
+- [Features](#features)
+- [Components](#components)
+- [Layout](#layout)
+- [Admin GUI](#admin-gui)
+- [Prerequisites](#prerequisites)
+- [Provisioning](#provisioning)
+  - [Worker configuration (wrangler.toml)](#worker-configuration-wranglertoml)
+- [Deploy](#deploy)
+  - [Admin worker deploy script](#admin-worker-deploy-script)
+- [Initialization](#initialization)
+- [Configuration knobs](#configuration-knobs)
+- [Notes](#notes)
+- [Consolidated Design Plan](#consolidated-design-plan)
+  - [1. Architecture Overview](#1-architecture-overview)
+  - [2. Cloudflare Account Setup](#2-cloudflare-account-setup)
+  - [3. D1 Schema](#3-d1-schema--newsletter_db)
+  - [4. Queue](#4-queue--newsletter-queue)
+  - [5. R2](#5-r2--newsletter-archive)
+  - [6. Workers](#6-workers)
+  - [7. Repo Layout](#7-repo-layout)
+  - [8. Configuration](#8-configuration-settings--secrets)
+  - [9. Key Flows](#9-key-flows)
+  - [9b. Warmup Schedule](#9b-warmup-schedule)
+  - [10. Operational Concerns](#10-operational-concerns)
+  - [11. Implementation Milestones](#11-implementation-milestones)
+- [Further Reading](#further-reading)
+
 ## Features
 
 - **Multi-tenant newsletters** — each newsletter is an independent list with its
