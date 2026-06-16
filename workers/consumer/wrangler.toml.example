@@ -3,9 +3,9 @@ main = "src/index.ts"
 compatibility_date = "2025-01-15"
 compatibility_flags = ["nodejs_compat"]
 
-# Tunables (sending identity, size cap, warmup schedule, etc.) are no longer
-# declared here. They resolve from the D1 `settings` table, falling back to the
-# built-in defaults in shared/settings.ts (edit them there or via the console).
+# Tunables (sending identity, size cap, warmup schedule, etc.) are NOT declared
+# here. They resolve from the D1 `settings` table, falling back to the built-in
+# defaults in shared/settings.ts (edit them there or via the console).
 #
 # Secret (set with `wrangler secret put CF_READ_API_TOKEN`): an account-scoped
 # token with "Account > Email > Read" (or broader read) so the consumer can
@@ -13,11 +13,15 @@ compatibility_flags = ["nodejs_compat"]
 # day to drive the warmup daily cap. The account id comes from the
 # ACCESS_ACCOUNT_ID setting. If the secret or account id is missing the daily
 # cap falls back to WARMUP_FALLBACK_DAILY_CAP.
+#
+# Secrets (set via `wrangler secret put`):
+#   LINK_SIGNING_KEY        — must match the tracker's value
+#   ATTACHMENT_SIGNING_KEY  — must match the tracker's value
 
 [[d1_databases]]
 binding = "DB"
 database_name = "newsletter_db"
-database_id = "c6995e6a-216d-4ed2-9390-1fc36fb51f1b"
+database_id = "REPLACE_WITH_D1_ID"
 
 [[r2_buckets]]
 binding = "ARCHIVE"

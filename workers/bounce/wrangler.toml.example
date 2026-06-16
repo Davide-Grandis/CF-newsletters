@@ -9,7 +9,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "newsletter_db"
-database_id = "c6995e6a-216d-4ed2-9390-1fc36fb51f1b"
+database_id = "REPLACE_WITH_D1_ID"
 
 [[r2_buckets]]
 binding = "ARCHIVE"
@@ -17,4 +17,4 @@ bucket_name = "newsletter-archive"
 
 # Email Routing rule (configured in the Cloudflare dashboard, on the sending
 # domain — i.e. the BASE_DOMAIN setting; there is no separate bounce domain):
-#   bounce+*@<BASE_DOMAIN>  -> Worker `newsletter-bounce`
+#   bounce+*@yourdomain.com  -> Worker `newsletter-bounce`

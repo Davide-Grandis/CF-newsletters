@@ -8,7 +8,7 @@ compatibility_date = "2025-01-15"
 [[d1_databases]]
 binding = "DB"
 database_name = "newsletter_db"
-database_id = "c6995e6a-216d-4ed2-9390-1fc36fb51f1b"
+database_id = "REPLACE_WITH_D1_ID"
 
 [[r2_buckets]]
 binding = "ARCHIVE"

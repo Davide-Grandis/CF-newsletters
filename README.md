@@ -159,7 +159,43 @@ wrangler r2 bucket create newsletter-archive
 wrangler r2 bucket create newsletter-admin --jurisdiction eu
 ```
 
-Update each `workers/*/wrangler.toml` with the IDs that come back, then:
+### Worker configuration (`wrangler.toml`)
+
+The real `workers/*/wrangler.toml` files are **not** committed — they hold
+deployment-specific IDs and your custom hostnames. Each worker ships a
+`wrangler.toml.example` template instead. Copy each one and fill in your values:
+
+```bash
+for w in ingest consumer tracker bounce cleanup admin; do
+  cp "workers/$w/wrangler.toml.example" "workers/$w/wrangler.toml"
+done
+```
+
+Then, in every copied file:
+
+- Replace `REPLACE_WITH_D1_ID` with the `database_id` returned by
+  `wrangler d1 create newsletter_db` (the same id goes in all six files).
+- In `workers/admin/wrangler.toml` and `workers/tracker/wrangler.toml`, replace
+  the `routes` hostnames (`console.yourdomain.com`, `track.yourdomain.com`) with
+  your own custom domains. The `custom_domain = true` route creates the DNS
+  record on first deploy — do **not** pre-create it manually.
+
+What each worker's `wrangler.toml` declares:
+
+| Worker | Bindings & config |
+| ------ | ----------------- |
+| **ingest** | `nodejs_compat`; `DB` (D1); `ARCHIVE` (R2 `newsletter-archive`); `QUEUE` producer (`newsletter-queue`). Receives the newsletter inbound address via an Email Routing rule. |
+| **consumer** | `nodejs_compat`; `DB`; `ARCHIVE`; `SEND_EMAIL`; `QUEUE` producer (re-enqueue overflow); queue **consumer** on `newsletter-queue` (`max_batch_size`/`max_concurrency`/`max_retries`, DLQ `newsletter-dlq`). Optional secret `CF_READ_API_TOKEN`; signing-key secrets must match the tracker. |
+| **tracker** | `DB`; `ARCHIVE`; `SEND_EMAIL`; custom-domain `routes` (`track.*`). Secrets `LINK_SIGNING_KEY`, `ATTACHMENT_SIGNING_KEY` (match the consumer) and optional `TURNSTILE_SECRET_KEY`. |
+| **bounce** | `nodejs_compat`; `DB`; `ARCHIVE`. Receives `bounce+*@<domain>` via a catch-all Email Routing rule. |
+| **cleanup** | `DB`; `ARCHIVE`; `[triggers] crons` (daily at 04:00 UTC). |
+| **admin** | `DB`; `SEND_EMAIL`; `ASSETS_R2` (R2 `newsletter-admin`, `jurisdiction = "eu"`); `[assets]` SPA from `./public` (SPA fallback); custom-domain `routes` (`console.*`). No auth secret — sits behind Cloudflare Access. Optional secrets `CF_API_TOKEN`, `CF_READ_API_TOKEN`, `CF_ZT_API_TOKEN`. |
+
+All tunable `[vars]` were removed from these files — runtime configuration lives
+in the D1 `settings` table (see [*Initialization*](#initialization)). Only
+bindings, routes, queue/cron config and the database id live in `wrangler.toml`.
+
+With the files in place:
 
 ```bash
 # Email Routing rules
@@ -428,7 +464,7 @@ newsletter/
 ├── package.json
 ├── tsconfig.json
 ├── workers/
-│   ├── ingest/      (src/index.ts, wrangler.toml)
+│   ├── ingest/      (src/index.ts, wrangler.toml.example)
 │   ├── consumer/
 │   ├── tracker/
 │   ├── bounce/
@@ -446,9 +482,12 @@ newsletter/
 │   └── types.ts
 └── db/
     ├── schema.sql
-    ├── reset.sql
-    └── migrations/
+    └── reset.sql
 ```
+
+(`workers/*/wrangler.toml` and `db/migrations/` are git-ignored — copy each
+`wrangler.toml.example` to `wrangler.toml` and fill in your IDs; `schema.sql` is
+the authoritative database schema.)
 
 ## 8. Configuration (settings / secrets)
 - Settings (resolved from the D1 `settings` table → built-in defaults in `shared/settings.ts`, editable on the console's **Settings** page; see [*Initialization*](#initialization)): `EMAIL_ROUTING_ZONE_ID`, `INGEST_WORKER_NAME`, `BASE_DOMAIN`, `ACCESS_ACCOUNT_ID`, `ACCESS_LIST_ID`, `ALLOW_ADMIN_NEWSLETTER_CRUD`, `FROM_ADDRESS`, `TRACKING_BASE_URL`, `DEFAULT_FOOTER_HTML`, `DEFAULT_FOOTER_TEXT`, `TRACKING_ENABLED`, `TURNSTILE_SITE_KEY`, `BATCH_SIZE`, `MAX_ATTACHMENT_BYTES`, `MAX_TOTAL_ATTACHMENT_BYTES`, `MAX_ATTACHMENT_COUNT`, `ALLOWED_MIME`, `BLOCKED_EXTENSIONS`, `ATTACHMENT_LINK_THRESHOLD_BYTES`, `MAX_RAW_BYTES`, `RETENTION_DAYS`, `HARD_BOUNCE_THRESHOLD`, `SOFT_BOUNCE_THRESHOLD`, and the `WARMUP_*` keys (`WARMUP_TARGET_WEEKLY`, `WARMUP_SCHEDULE`, `WARMUP_FALLBACK_DAILY_CAP`).

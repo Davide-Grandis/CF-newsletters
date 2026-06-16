@@ -3,12 +3,12 @@ main = "src/index.ts"
 compatibility_date = "2025-01-15"
 
 # The admin GUI is served on a custom hostname that is fronted by a
-# Cloudflare Access application. Do NOT pre-create a DNS record for
-# `console.eneanewsletter.it`; this route creates it automatically.
-routes = [{ pattern = "console.eneanewsletter.it", custom_domain = true }]
+# Cloudflare Access application. Do NOT pre-create a DNS record for this
+# hostname; the route below creates it automatically on first deploy.
+routes = [{ pattern = "console.yourdomain.com", custom_domain = true }]
 
 # Tunables (sending identity, warmup config, Email Routing zone/worker, base
-# domain, etc.) are no longer declared as vars here. They resolve from the D1
+# domain, etc.) are NOT declared as vars here. They resolve from the D1
 # `settings` table, falling back to the built-in defaults in shared/settings.ts;
 # edit them there or in the console (which writes to the settings table).
 #
@@ -25,7 +25,7 @@ routes = [{ pattern = "console.eneanewsletter.it", custom_domain = true }]
 [[d1_databases]]
 binding = "DB"
 database_name = "newsletter_db"
-database_id = "c6995e6a-216d-4ed2-9390-1fc36fb51f1b"
+database_id = "REPLACE_WITH_D1_ID"
 
 # Email Sending binding — used to send a welcome email to a newly added console
 # user. Requires Email Sending (DKIM) to be enabled on the sending domain.

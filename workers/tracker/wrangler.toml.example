@@ -3,12 +3,15 @@ main = "src/index.ts"
 compatibility_date = "2025-01-15"
 
 # Custom-domain route for the tracker (pixel, click, unsubscribe, attachment download).
-routes = [{ pattern = "track.eneanewsletter.it", custom_domain = true }]
+# This route creates the DNS record automatically on first deploy — do NOT
+# pre-create it manually or `wrangler deploy` will fail with
+# "Hostname already has externally managed DNS records".
+routes = [{ pattern = "track.yourdomain.com", custom_domain = true }]
 
 [[d1_databases]]
 binding = "DB"
 database_name = "newsletter_db"
-database_id = "c6995e6a-216d-4ed2-9390-1fc36fb51f1b"
+database_id = "REPLACE_WITH_D1_ID"
 
 [[r2_buckets]]
 binding = "ARCHIVE"

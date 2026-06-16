@@ -10,7 +10,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "newsletter_db"
-database_id = "c6995e6a-216d-4ed2-9390-1fc36fb51f1b"
+database_id = "REPLACE_WITH_D1_ID"
 
 [[r2_buckets]]
 binding = "ARCHIVE"
@@ -20,4 +20,5 @@ bucket_name = "newsletter-archive"
 binding = "QUEUE"
 queue = "newsletter-queue"
 
-# Email Routing route this worker to receive `newsletter@eneanewsletter.it`.
+# Configure an Email Routing rule to route this worker the newsletter inbound
+# address, e.g. newsletter@yourdomain.com -> Worker `newsletter-ingest`.
