@@ -8,7 +8,7 @@ export interface Env {
 
 export default {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(runRetention(env));
+    ctx.waitUntil(runRetention(env).catch(console.error));
   },
 };
 

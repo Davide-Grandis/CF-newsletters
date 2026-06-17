@@ -23,6 +23,7 @@ import { sanitizeFooterHtml } from '../../../shared/footer';
 import {
   loadSettings,
   readStoredSettings,
+  resolveTrackingBaseUrl,
   SETTING_KEYS,
   SETTINGS_DEFAULTS,
   isSettingKey,
@@ -146,7 +147,10 @@ export default {
         // Public base URL of the tracker worker (hosts the subscribe/verify
         // pages). Not sensitive — it already appears in every email's links.
         // Used by the console to show each newsletter's public subscribe URL.
-        tracking_base_url: (cfg as unknown as Record<string, string | undefined>).TRACKING_BASE_URL ?? '',
+        tracking_base_url: resolveTrackingBaseUrl(
+          (cfg as unknown as Record<string, string | undefined>).TRACKING_BASE_URL ?? '',
+          cfg.BASE_DOMAIN ?? '',
+        ),
         protected_by_access: Boolean(rawEmail),
         // Whether the Cloudflare Access login settings (account + list IDs) are
         // configured. Used by the SPA to nudge a super_admin to finish setup.
@@ -1462,15 +1466,27 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
     if (rest === '/subscribers') {
       if (m === 'GET') {
         const status = url.searchParams.get('status');
+        const verifiedParam = url.searchParams.get('verified');
         const q = url.searchParams.get('q');
         const offset = Math.max(0, Number(url.searchParams.get('cursor') ?? '0') || 0);
         const limit = clamp(Number(url.searchParams.get('limit') ?? '50'), 1, 200);
+        const VALID_SORT_COLS = new Set(['email', 'name', 'status', 'verified', 'bounce_count', 'subscribed_at', 'id']);
+        const sortColRaw = url.searchParams.get('sort_key') ?? 'email';
+        const sortCol = VALID_SORT_COLS.has(sortColRaw) ? sortColRaw : 'email';
+        const sortDir = url.searchParams.get('sort_dir') === 'desc' ? 'DESC' : 'ASC';
         const where: string[] = ['newsletter_id = ?'];
         const binds: unknown[] = [nid];
         if (status) {
           where.push('status = ?');
           binds.push(status);
         }
+        if (verifiedParam === 'true' || verifiedParam === 'false') {
+          where.push('verified = ?');
+          binds.push(verifiedParam === 'true' ? 1 : 0);
+        }
+        const bouncesParam = url.searchParams.get('bounces');
+        if (bouncesParam === '0') where.push('bounce_count = 0');
+        else if (bouncesParam === 'gt0') where.push('bounce_count > 0');
         if (q) {
           where.push('(email LIKE ? OR name LIKE ?)');
           const like = `%${q.replace(/[%_]/g, (c) => '\\' + c)}%`;
@@ -1481,7 +1497,7 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
           env.DB
             .prepare(
               `SELECT id, email, name, verified, status, bounce_count, subscribed_at FROM subscribers ` +
-                `${whereSql} ORDER BY id ASC LIMIT ? OFFSET ?`,
+                `${whereSql} ORDER BY ${sortCol} ${sortDir} LIMIT ? OFFSET ?`,
             )
             .bind(...binds, limit, offset)
             .all(),
@@ -1514,6 +1530,7 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
     }
     if (rest === '/subscribers/export' && m === 'GET') {
       const status = url.searchParams.get('status');
+      const verifiedParam = url.searchParams.get('verified');
       const q = url.searchParams.get('q');
       const where: string[] = ['newsletter_id = ?'];
       const binds: unknown[] = [nid];
@@ -1521,6 +1538,13 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
         where.push('status = ?');
         binds.push(status);
       }
+      if (verifiedParam === 'true' || verifiedParam === 'false') {
+        where.push('verified = ?');
+        binds.push(verifiedParam === 'true' ? 1 : 0);
+      }
+      const bouncesParam = url.searchParams.get('bounces');
+      if (bouncesParam === '0') where.push('bounce_count = 0');
+      else if (bouncesParam === 'gt0') where.push('bounce_count > 0');
       if (q) {
         where.push('(email LIKE ? OR name LIKE ?)');
         const like = `%${q.replace(/[%_]/g, (c) => '\\' + c)}%`;
@@ -1598,12 +1622,68 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
       }
       return Response.json({ ok: true, added, duplicated });
     }
+    // Resend confirmation (verify) email to an unverified subscriber.
+    const rcm = /^\/subscribers\/(\d+)\/resend-confirmation$/.exec(rest);
+    if (rcm && m === 'POST') {
+      const sid = Number(rcm[1]);
+      const sub = await env.DB
+        .prepare('SELECT id, email, name, verified FROM subscribers WHERE id = ? AND newsletter_id = ?')
+        .bind(sid, nid)
+        .first<{ id: number; email: string; name: string | null; verified: number }>();
+      if (!sub) return Response.json({ error: 'not found' }, { status: 404 });
+      if (sub.verified === 1) return Response.json({ error: 'already verified' }, { status: 409 });
+      const confirmToken = crypto.randomUUID();
+      await env.DB
+        .prepare("UPDATE subscribers SET confirm_token = ?, status = 'active' WHERE id = ?")
+        .bind(confirmToken, sid)
+        .run();
+      const nl = await env.DB
+        .prepare('SELECT name, from_address FROM newsletters WHERE id = ?')
+        .bind(nid)
+        .first<{ name: string; from_address: string | null }>();
+      if (nl && env.SEND_EMAIL) {
+        const base = resolveTrackingBaseUrl(
+          (env as unknown as Record<string, string | undefined>).TRACKING_BASE_URL ?? '',
+          env.BASE_DOMAIN ?? '',
+        );
+        if (!base) {
+          return Response.json(
+            { error: 'Cannot send verification email: configure BASE_DOMAIN or TRACKING_BASE_URL in Settings' },
+            { status: 503 },
+          );
+        }
+        const verifyUrl = `${base}/verify/${sid}?t=${encodeURIComponent(confirmToken)}`;
+        const fromHeader = nl.from_address || env.FROM_ADDRESS || `newsletter@${env.BASE_DOMAIN ?? ''}`;
+        const fromAddr = extractAddr(fromHeader);
+        const messageId = `${crypto.randomUUID()}@${env.BASE_DOMAIN ?? 'localhost'}`;
+        const subject = `Confirm your subscription to ${nl.name}`;
+        const safeName = nl.name.replace(/[&<>"']/g, (c: string) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+        const html =
+          `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:0 auto;color:#0f172a">` +
+          `<h1 style="font-size:18px">Confirm your subscription</h1>` +
+          `<p>Please confirm that you want to receive <strong>${safeName}</strong> at this address.</p>` +
+          `<p style="margin:24px 0"><a href="${verifyUrl}" style="background:#0f172a;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;display:inline-block">Confirm subscription</a></p>` +
+          `<p style="font-size:13px;color:#64748b">Or paste this link into your browser:<br><a href="${verifyUrl}" style="color:#2563eb">${verifyUrl}</a></p>` +
+          `<p style="font-size:12px;color:#94a3b8">If you didn't request this, you can safely ignore this email — no subscription is created until you confirm.</p>` +
+          `</div>`;
+        const text =
+          `Confirm your subscription to ${nl.name}\n\n` +
+          `Please confirm you want to receive ${nl.name} at this address by opening:\n${verifyUrl}\n\n` +
+          `If you didn't request this, ignore this email — no subscription is created until you confirm.`;
+        const nameQ = sub.name ?? '';
+        const toHeader = nameQ ? `${(/[",<>]/.test(nameQ) ? `"${nameQ.replace(/"/g, '\\"')}"` : nameQ)} <${sub.email}>` : sub.email;
+        const raw = buildEmail({ from: fromHeader, to: toHeader, subject, messageId, text, html, attachments: [], headers: { 'X-Entity-Ref-ID': messageId } });
+        await env.SEND_EMAIL.send(new EmailMessage(fromAddr, sub.email, raw));
+      }
+      return Response.json({ ok: true });
+    }
+
     const sm = /^\/subscribers\/(\d+)$/.exec(rest);
     if (sm) {
       const id = Number(sm[1]);
       if (m === 'DELETE') {
         await env.DB
-          .prepare("UPDATE subscribers SET status='unsubscribed', unsubscribed_at=datetime('now') WHERE id = ? AND newsletter_id = ?")
+          .prepare('DELETE FROM subscribers WHERE id = ? AND newsletter_id = ?')
           .bind(id, nid)
           .run();
         return Response.json({ ok: true });
@@ -1772,6 +1852,24 @@ async function handleApi(req: Request, rawEnv: Env, url: URL): Promise<Response>
         total,
         nextCursor: offset + items.length < total ? offset + limit : null,
       });
+    }
+
+    if (m === 'DELETE' && !sub) {
+      if (!isSuper) return forbidden();
+      const camp = await env.DB
+        .prepare('SELECT status FROM campaigns WHERE id = ?')
+        .bind(id)
+        .first<{ status: string }>();
+      if (!camp) return Response.json({ error: 'not found' }, { status: 404 });
+      if (camp.status === 'sending') {
+        return Response.json({ error: 'cannot delete a campaign that is still sending' }, { status: 409 });
+      }
+      // attachments/sends/events cascade via ON DELETE CASCADE; logs do not.
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM logs WHERE campaign_id = ?').bind(id),
+        env.DB.prepare('DELETE FROM campaigns WHERE id = ?').bind(id),
+      ]);
+      return Response.json({ ok: true });
     }
 
     if (m === 'POST' && sub === 'replay-failed') {

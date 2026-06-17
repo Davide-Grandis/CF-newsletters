@@ -257,7 +257,7 @@ export default function NewsletterAdmins({
             {admins.data && items.length === 0 && (
               <tr>
                 <td colSpan={canManage ? 3 : 2} className="p-4 text-center text-slate-500 dark:text-slate-400">
-                  No admins assigned. Super admins manage every newsletter.
+                  No admins assigned. Super admins manage this newsletter.
                 </td>
               </tr>
             )}

@@ -140,6 +140,18 @@ export const SETTINGS_DEFAULTS: Record<SettingKey, string> = {
 };
 
 /**
+ * Returns the effective tracker base URL.
+ * If TRACKING_BASE_URL is empty or still the built-in placeholder default,
+ * falls back to https://track.{baseDomain} — the standard deployment convention.
+ */
+export function resolveTrackingBaseUrl(trackingBaseUrl: string, baseDomain: string): string {
+  const t = (trackingBaseUrl ?? '').trim().replace(/\/+$/, '');
+  return (!t || t === 'https://track.yourdomain.com') && baseDomain
+    ? `https://track.${baseDomain}`
+    : t;
+}
+
+/**
  * Reads all overrides from the `settings` table. Returns a plain map of the
  * allow-listed keys that actually have a stored row. Tolerates a missing
  * table (returns an empty map) so workers keep running before the migration

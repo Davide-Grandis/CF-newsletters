@@ -4,6 +4,8 @@ import { api, Author } from '../api';
 import { Tooltip } from '../components/Tooltip';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
+type ImportResult = { added: number; duplicated: number };
+
 export default function Authors({
   newsletterId,
   canEdit = true,
@@ -40,6 +42,41 @@ export default function Authors({
   const [name, setName] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [toRemove, setToRemove] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const text = await file.text();
+      return api<ImportResult>(`${base}/import`, {
+        method: 'POST',
+        body: JSON.stringify({ csv: text }),
+      });
+    },
+    onSuccess: (res) => {
+      setImportResult(res);
+      refresh();
+    },
+  });
+
+  const [exporting, setExporting] = useState(false);
+  async function onExport() {
+    setExporting(true);
+    try {
+      const res = await fetch(`${base}/export`);
+      if (!res.ok) throw new Error(`export failed (${res.status})`);
+      const blob = await res.blob();
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `authors-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function onAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -55,13 +92,58 @@ export default function Authors({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-base font-medium">Authorized authors</h2>
-        <p className="text-sm text-slate-500 mt-2 dark:text-slate-400">
-          Inbound emails to this newsletter's address are rejected unless the
-          sender's address is listed here. Lookup is case-insensitive.
-        </p>
+      <div className="flex items-center gap-2">
+        <div>
+          <h2 className="text-base font-medium">Authorized authors</h2>
+          <p className="text-sm text-slate-500 mt-1 dark:text-slate-400">
+            Inbound emails to this newsletter's address are rejected unless the
+            sender's address is listed here. Lookup is case-insensitive.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onExport}
+          disabled={exporting}
+          className="ml-auto text-sm bg-white border border-slate-200 rounded px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+        >
+          {exporting ? 'Exporting…' : 'Export CSV'}
+        </button>
+        {canEdit && (
+          <label className="text-sm cursor-pointer bg-white border border-slate-200 rounded px-3 py-1.5 hover:bg-slate-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800">
+            Import CSV
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.currentTarget.files?.[0];
+                if (f) upload.mutate(f);
+              }}
+            />
+          </label>
+        )}
       </div>
+
+      {importResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm bg-white rounded-lg shadow-lg p-5 dark:bg-slate-900 dark:border dark:border-slate-700">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Import complete</h2>
+            <div className="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-200">
+              <div>Authors added: <span className="font-semibold">{importResult.added}</span></div>
+              <div>Duplicated: <span className="font-semibold">{importResult.duplicated}</span></div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setImportResult(null)}
+                className="text-sm rounded px-3 py-1.5 bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {canEdit && (
       <form onSubmit={onAdd} className="flex flex-wrap items-end gap-2 bg-white border border-slate-200 rounded p-3 dark:bg-slate-900 dark:border-slate-800">

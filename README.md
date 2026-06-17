@@ -163,6 +163,11 @@ During development, run `cd web && npm run dev` (Vite proxies `/api/*` to
 ## Prerequisites
 
 - Cloudflare zone with Email Routing enabled (MX/SPF set up).
+- **Email Routing Subaddressing enabled** for the zone (Cloudflare dashboard →
+  Email → Email Routing → Settings → Subaddressing). This is a **one-time
+  manual step** that cannot be set via API. Without it, the VERP
+  `bounce+<id>@<domain>` addresses used for bounce attribution won't reach
+  the bounce worker.
 - Email Sending (beta) enabled on the zone, DKIM published, the
   `SEND_EMAIL` binding allow-listed for `newsletter@yourdomain.com`.
 - `wrangler` >= 3, Node 20+.

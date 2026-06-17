@@ -64,7 +64,7 @@ interface Tab {
 const TABS: Tab[] = [
   {
     id: 'login',
-    label: 'Login',
+    label: 'Account details',
     sections: [
   {
     title: 'Console access',
@@ -80,6 +80,17 @@ const TABS: Tab[] = [
     fields: [
       { key: 'ACCESS_ACCOUNT_ID', label: 'Account ID', help: 'Cloudflare account that owns the Zero Trust Emails list (lists are account-scoped). Must match the account the CF_ZT_API_TOKEN secret is scoped to.', hideSource: true, hideKey: true },
       { key: 'ACCESS_LIST_ID', label: 'Emails list ID', help: 'ID of the Zero Trust "Emails" list referenced by the Access policy. The worker appends/removes member emails as console users are added or removed. Leave empty to disable automatic sync (you then maintain the list by hand).', hideSource: true, hideKey: true },
+    ],
+  },
+  {
+    title: 'Sending identity',
+    description:
+      'The domain and address used for all outgoing emails.',
+    note:
+      'One-time setup: enable Email Routing "Subaddressing" for the sending domain in the Cloudflare dashboard (Compute \u2192 Email Service \u2192 Email Routing \u2192 Settings). It cannot be toggled via API. It lets the auto-created bounce@<domain> rule capture VERP bounce addresses (bounce+<id>@<domain>); without it, bounce handling will not work.',
+    fields: [
+      { key: 'BASE_DOMAIN', label: 'Sending domain', help: 'The Cloudflare domain name for the Email Sending service. It represents the domain for used for sending and receiving emails.', hideKey: true, hideSource: true, optionsFrom: 'sending-domains' },
+      { key: 'FROM_ADDRESS', label: 'Sender address', help: 'The From: address used for outgoing emails (console notifications and newsletters without a per-newsletter sender). Must be a local part on the sending domain above.', hideKey: true, hideSource: true, splitAt: true },
     ],
   },
     ],
@@ -108,6 +119,13 @@ const TABS: Tab[] = [
     id: 'attachments',
     label: 'Email ingestion',
     sections: [
+  {
+    title: 'Ingest worker',
+    description: 'Worker script that Email Routing rules forward inbound mail to.',
+    fields: [
+      { key: 'INGEST_WORKER_NAME', label: 'Ingest worker name', help: 'Worker script that Email Routing rules forward inbound mail to. Pick from the Workers in this account.', hideKey: true, hideSource: true, optionsFrom: 'workers' },
+    ],
+  },
   {
     title: 'Max message size',
     description: 'Fan-out and message-size guards used by the ingest and consumer workers.',
@@ -142,24 +160,6 @@ const TABS: Tab[] = [
     fields: [
       { key: 'DEFAULT_FOOTER_HTML', label: 'HTML footer', help: 'HTML appended to the end of every email body (after tracking instrumentation, so its links are not click-tracked).', type: 'textarea', hideKey: true, rows: 6, compact: true },
       { key: 'DEFAULT_FOOTER_TEXT', label: 'Plain-text footer', help: 'Footer appended to the plain-text part of every email.', type: 'textarea', hideKey: true, rows: 6, compact: true },
-    ],
-  },
-    ],
-  },
-  {
-    id: 'sending',
-    label: 'Email sending',
-    sections: [
-  {
-    title: 'Deployment & routing',
-    description:
-      'Identifiers the admin worker uses to keep Email Routing rules in sync. Changing these takes effect immediately for new newsletter operations.',
-    note:
-      'One-time setup: enable Email Routing "Subaddressing" for the sending domain in the Cloudflare dashboard (Compute → Email Service → Email Routing → Settings). It cannot be toggled via API. It lets the auto-created bounce@<domain> rule capture VERP bounce addresses (bounce+<id>@<domain>); without it, bounce handling will not work.',
-    fields: [
-      { key: 'BASE_DOMAIN', label: 'Sending domain', help: 'The Cloudflare domain name for the Email Sending service. It represents the domain for used for sending and receiving emails.', hideKey: true, hideSource: true, optionsFrom: 'sending-domains' },
-      { key: 'FROM_ADDRESS', label: 'Sender address', help: 'The From: address used for outgoing emails (console notifications and newsletters without a per-newsletter sender). Must be a local part on the sending domain above.', hideKey: true, hideSource: true, splitAt: true },
-      { key: 'INGEST_WORKER_NAME', label: 'Ingest worker name', help: 'Worker script that Email Routing rules forward inbound mail to. Pick from the Workers in this account.', hideKey: true, hideSource: true, optionsFrom: 'workers' },
     ],
   },
     ],
@@ -357,12 +357,6 @@ export default function Settings() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Settings</h1>
-        <p className="text-sm text-slate-500 mt-2 dark:text-slate-400 max-w-3xl">
-          Global runtime configuration.
-          <br />
-          Saved values are stored in the database and override the built-in default located in{' '}
-          <code className="bg-slate-100 px-1 rounded dark:bg-slate-800">shared/settings.ts</code>.
-        </p>
       </div>
 
       <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800 mb-6">

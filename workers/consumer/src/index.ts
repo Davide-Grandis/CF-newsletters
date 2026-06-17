@@ -28,7 +28,7 @@ import {
   type WarmupState,
 } from '../../../shared/warmup';
 import { fetchAccountSendingQuota } from '../../../shared/quota';
-import { loadSettings } from '../../../shared/settings';
+import { loadSettings, resolveTrackingBaseUrl } from '../../../shared/settings';
 
 export interface Env {
   DB: D1Database;
@@ -66,6 +66,7 @@ export default {
     // `settings` table once per invocation; env vars / defaults are the
     // fallback. Bindings and secrets on `rawEnv` are preserved.
     const env = await loadSettings(rawEnv.DB, rawEnv);
+    env.TRACKING_BASE_URL = resolveTrackingBaseUrl(env.TRACKING_BASE_URL, env.BASE_DOMAIN ?? '');
 
     // Cache campaign + attachments per batch lifetime.
     const cache = new Map<string, { campaign: NonNullable<Awaited<ReturnType<typeof getCampaign>>>; parts: AttachmentPart[] }>();
@@ -205,7 +206,7 @@ export default {
           try {
             let html = await renderRecipientHtml(env, campaign, allAtts, r.subscriberId);
             let text = campaign.text ?? '';
-            const unsubUrl = unsubscribeUrl(env.TRACKING_BASE_URL, r.subscriberId, r.token);
+            const unsubUrl = unsubscribeUrl(env.TRACKING_BASE_URL, r.subscriberId, r.token, campaignId);
             // Append the footer AFTER tracking instrumentation so its
             // unsubscribe/author links are never click-rewritten. The footer is
             // per-newsletter, falling back to the global default; the renderers

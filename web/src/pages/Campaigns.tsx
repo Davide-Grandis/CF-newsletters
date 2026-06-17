@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { api, Campaign, Page } from '../api';
 import { PAGE_SIZE, Pagination } from '../components/Pagination';
+import { RefreshIcon } from './Dashboard';
 
 export default function Campaigns() {
   const [page, setPage] = useState(0);
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['campaigns', page],
     placeholderData: keepPreviousData,
     queryFn: () =>
@@ -15,7 +16,18 @@ export default function Campaigns() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold">Campaigns</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-xl font-semibold">Campaigns</h1>
+        <button
+          type="button"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="ml-auto inline-flex items-center gap-1.5 text-sm border border-slate-200 rounded px-3 py-1.5 bg-white hover:bg-slate-50 disabled:opacity-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+        >
+          <RefreshIcon spinning={isFetching} />
+          Refresh
+        </button>
+      </div>
       {isLoading ? (
         <div className="text-sm text-slate-500 dark:text-slate-400">Loading…</div>
       ) : (

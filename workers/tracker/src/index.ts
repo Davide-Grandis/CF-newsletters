@@ -1,7 +1,8 @@
 import { EmailMessage } from 'cloudflare:email';
 import { verifyHmac } from '../../../shared/tracking';
 import { buildEmail } from '../../../shared/mime';
-import { loadSettings } from '../../../shared/settings';
+import { loadSettings, resolveTrackingBaseUrl } from '../../../shared/settings';
+import { writeLog } from '../../../shared/db';
 
 export interface Env {
   DB: D1Database;
@@ -37,7 +38,7 @@ export default {
     if (req.method === 'GET' && parts[0] === 'o' && parts.length === 3) {
       const campaignId = parts[1]!;
       const sub = Number(parts[2]!.replace(/\.gif$/, ''));
-      ctx.waitUntil(logEvent(env, 'open', campaignId, sub, req, null));
+      ctx.waitUntil(logEvent(env, 'open', campaignId, sub, req, null).catch(console.error));
       return new Response(TRANSPARENT_GIF, {
         headers: {
           'Content-Type': 'image/gif',
@@ -59,7 +60,7 @@ export default {
       const ok = await verifyHmac(env.LINK_SIGNING_KEY, `c|${campaignId}|${sub}|${rawU}`, sig);
       if (!ok) return new Response('forbidden', { status: 403 });
       const target = decodeURIComponent(rawU);
-      ctx.waitUntil(logEvent(env, 'click', campaignId, sub, req, target));
+      ctx.waitUntil(logEvent(env, 'click', campaignId, sub, req, target).catch(console.error));
       return Response.redirect(target, 302);
     }
 
@@ -80,7 +81,7 @@ export default {
       if (!row) return new Response('not found', { status: 404 });
       const obj = await env.ARCHIVE.get(row.r2_key);
       if (!obj) return new Response('not found', { status: 404 });
-      ctx.waitUntil(logEvent(env, 'download', campaignId, sub, req, row.filename, attId));
+      ctx.waitUntil(logEvent(env, 'download', campaignId, sub, req, row.filename, attId).catch(console.error));
       return new Response(obj.body, {
         headers: {
           'Content-Type': row.content_type,
@@ -89,27 +90,57 @@ export default {
       });
     }
 
-    // /u/:sub  GET (page) or POST (one-click)
+    // /u/:sub  GET (page) or POST (browser form or RFC 8058 one-click)
     if (parts[0] === 'u' && parts.length === 2) {
       const sub = Number(parts[1]!);
       const token = url.searchParams.get('t');
       if (req.method === 'GET') {
-        if (!token) return new Response('bad request', { status: 400 });
+        if (!token) return htmlResponse(pageShell('Invalid link', '<p>This unsubscribe link is invalid.</p>'), 400);
         const ok = await checkUnsubToken(env, sub, token);
-        if (!ok) return new Response('forbidden', { status: 403 });
-        return new Response(unsubPage(sub, token), { headers: { 'Content-Type': 'text/html' } });
+        if (!ok) return htmlResponse(pageShell('Invalid link', '<p>This unsubscribe link is invalid or has expired.</p>'), 403);
+        const cfg = await loadSettings(env.DB, env);
+        const siteKey = (cfg.TURNSTILE_ENABLED ?? 'true') !== 'false' ? (cfg.TURNSTILE_SITE_KEY ?? '') : '';
+        const nlRow = await env.DB
+          .prepare('SELECT n.name, s.email FROM subscribers s JOIN newsletters n ON n.id = s.newsletter_id WHERE s.id = ?')
+          .bind(sub)
+          .first<{ name: string; email: string }>();
+        return htmlResponse(unsubPage(sub, token, nlRow?.name ?? 'this newsletter', nlRow?.email ?? '', siteKey, null));
       }
       if (req.method === 'POST') {
         const form = await req.formData().catch(() => null);
         const t = token ?? (form ? String(form.get('t') ?? '') : '');
         const ok = await checkUnsubToken(env, sub, t);
         if (!ok) return new Response('forbidden', { status: 403 });
+        // RFC 8058 one-click: mail client posts List-Unsubscribe=One-Click — skip Turnstile.
+        const isOneClick = form ? String(form.get('List-Unsubscribe') ?? '') === 'One-Click' : false;
+        if (!isOneClick) {
+          const cfg = await loadSettings(env.DB, env);
+          const turnstileEnabled = (cfg.TURNSTILE_ENABLED ?? 'true') !== 'false';
+          const siteKey = cfg.TURNSTILE_SITE_KEY ?? '';
+          if (turnstileEnabled && siteKey && env.TURNSTILE_SECRET_KEY) {
+            const tsToken = form ? String(form.get('cf-turnstile-response') ?? '') : '';
+            const human = await verifyTurnstile(env.TURNSTILE_SECRET_KEY, tsToken, req.headers.get('cf-connecting-ip'));
+            if (!human) {
+              const nlRow = await env.DB
+                .prepare('SELECT n.name, s.email FROM subscribers s JOIN newsletters n ON n.id = s.newsletter_id WHERE s.id = ?')
+                .bind(sub)
+                .first<{ name: string; email: string }>();
+              return htmlResponse(unsubPage(sub, t, nlRow?.name ?? 'this newsletter', nlRow?.email ?? '', siteKey, 'Verification failed. Please try again.'), 400);
+            }
+          }
+        }
+        const nlRow = await env.DB
+          .prepare('SELECT n.id AS newsletter_id, n.name, s.email FROM subscribers s JOIN newsletters n ON n.id = s.newsletter_id WHERE s.id = ?')
+          .bind(sub)
+          .first<{ newsletter_id: string; name: string; email: string }>();
         await env.DB
           .prepare("UPDATE subscribers SET status='unsubscribed', unsubscribed_at=datetime('now') WHERE id = ?")
           .bind(sub)
           .run();
-        ctx.waitUntil(logEvent(env, 'unsubscribe', null, sub, req, null));
-        return new Response('Unsubscribed.', { status: 200 });
+        const unsubCampaignId = url.searchParams.get('c') || null;
+        ctx.waitUntil(logEvent(env, 'unsubscribe', unsubCampaignId, sub, req, null, null, nlRow?.newsletter_id ?? null).catch(console.error));
+        if (isOneClick) return new Response('', { status: 200 });
+        return htmlResponse(unsubSuccessPage(nlRow?.name ?? 'this newsletter', nlRow?.email ?? ''));
       }
     }
 
@@ -159,6 +190,7 @@ async function handleSubscribe(
   slug: string,
 ): Promise<Response> {
   const cfg = await loadSettings(env.DB, env);
+  cfg.TRACKING_BASE_URL = resolveTrackingBaseUrl(cfg.TRACKING_BASE_URL ?? '', cfg.BASE_DOMAIN ?? '');
   const siteKey = cfg.TURNSTILE_SITE_KEY ?? '';
   const turnstileEnabled = (cfg.TURNSTILE_ENABLED ?? 'true') !== 'false';
   const nl = await findSignupNewsletter(env, slug);
@@ -198,41 +230,60 @@ async function handleSubscribe(
       }
     }
 
-    // Decide whether to (re)send a confirmation. An already-confirmed active
-    // subscriber (confirm_token IS NULL) is left untouched — we still show the
-    // neutral "check your inbox" page so the response can't be used to probe
-    // who is subscribed.
     const existing = await env.DB
       .prepare('SELECT id, status, confirm_token FROM subscribers WHERE newsletter_id = ? AND email = ?')
       .bind(nl.id, email)
       .first<{ id: number; status: string; confirm_token: string | null }>();
 
-    if (!(existing && existing.status === 'active' && existing.confirm_token === null)) {
-      const confirmToken = crypto.randomUUID();
-      const unsubToken = crypto.randomUUID();
-      // Upsert as PENDING: confirm_token is set, so iterateActiveSubscribers
-      // skips this row until the email is confirmed. A fresh unsubscribe token
-      // is only assigned for brand-new rows (keep the existing one otherwise).
-      const res = await env.DB
-        .prepare(
-          'INSERT INTO subscribers (newsletter_id, email, name, verified, status, token, confirm_token) ' +
-            "VALUES (?, ?, ?, 0, 'active', ?, ?) " +
-            'ON CONFLICT(newsletter_id, email) DO UPDATE SET ' +
-            'confirm_token = excluded.confirm_token, ' +
-            'name = COALESCE(NULLIF(excluded.name, ?), subscribers.name)',
-        )
-        .bind(nl.id, email, name || null, unsubToken, confirmToken, '')
-        .run();
-      void res;
-      const row = await env.DB
-        .prepare('SELECT id FROM subscribers WHERE newsletter_id = ? AND email = ?')
-        .bind(nl.id, email)
-        .first<{ id: number }>();
-      if (row) {
-        const base = (cfg.TRACKING_BASE_URL ?? '').replace(/\/+$/, '');
-        const verifyUrl = `${base}/verify/${row.id}?t=${encodeURIComponent(confirmToken)}`;
-        ctx.waitUntil(sendConfirmationEmail(env, cfg, nl, email, name, verifyUrl));
-      }
+    // Already active and confirmed: tell the user explicitly.
+    if (existing && existing.status === 'active' && existing.confirm_token === null) {
+      return htmlResponse(
+        pageShell(
+          'Already subscribed',
+          `<p>You are already subscribed to <strong>${escapeHtml(nl.name)}</strong>.</p>`,
+        ),
+      );
+    }
+
+    // New subscriber or unconfirmed/inactive: upsert and send confirmation.
+    const confirmToken = crypto.randomUUID();
+    const unsubToken = crypto.randomUUID();
+    const res = await env.DB
+      .prepare(
+        'INSERT INTO subscribers (newsletter_id, email, name, verified, status, token, confirm_token) ' +
+          "VALUES (?, ?, ?, 0, 'active', ?, ?) " +
+          'ON CONFLICT(newsletter_id, email) DO UPDATE SET ' +
+          'confirm_token = excluded.confirm_token, ' +
+          'name = COALESCE(NULLIF(excluded.name, ?), subscribers.name)',
+      )
+      .bind(nl.id, email, name || null, unsubToken, confirmToken, '')
+      .run();
+    void res;
+    const row = await env.DB
+      .prepare('SELECT id FROM subscribers WHERE newsletter_id = ? AND email = ?')
+      .bind(nl.id, email)
+      .first<{ id: number }>();
+    ctx.waitUntil(writeLog(env.DB, {
+      source: 'tracker',
+      event: 'subscriber.signup',
+      newsletterId: nl.id,
+      message: `Signup pending confirmation for ${email}`,
+      detail: { email, name: name || null },
+    }));
+    if (row) {
+      const base = (cfg.TRACKING_BASE_URL ?? '').replace(/\/+$/, '');
+      const verifyUrl = `${base}/verify/${row.id}?t=${encodeURIComponent(confirmToken)}`;
+      ctx.waitUntil(
+        sendConfirmationEmail(env, cfg, nl, email, name, verifyUrl)
+          .then(() => writeLog(env.DB, {
+            source: 'tracker',
+            event: 'subscriber.confirmation_sent',
+            newsletterId: nl.id,
+            message: `Confirmation email sent to ${email}`,
+            detail: { email, subscriberId: row.id },
+          }))
+          .catch(console.error),
+      );
     }
 
     return htmlResponse(
@@ -268,6 +319,10 @@ async function handleVerify(env: Env, sub: number, token: string): Promise<Respo
   }
   // Confirm: clear the pending token, mark verified and (re)activate — this also
   // handles resubscribing a previously unsubscribed/bounced address.
+  const subRow = await env.DB
+    .prepare('SELECT newsletter_id, email FROM subscribers WHERE id = ?')
+    .bind(sub)
+    .first<{ newsletter_id: string; email: string }>();
   await env.DB
     .prepare(
       "UPDATE subscribers SET verified = 1, status = 'active', confirm_token = NULL, " +
@@ -275,6 +330,15 @@ async function handleVerify(env: Env, sub: number, token: string): Promise<Respo
     )
     .bind(sub)
     .run();
+  if (subRow) {
+    await writeLog(env.DB, {
+      source: 'tracker',
+      event: 'subscriber.verified',
+      newsletterId: subRow.newsletter_id,
+      message: `Subscription confirmed for ${subRow.email}`,
+      detail: { email: subRow.email, subscriberId: sub },
+    });
+  }
   return htmlResponse(
     pageShell('Subscription confirmed', '<p>You\u2019re all set \u2014 thanks for subscribing!</p>'),
   );
@@ -392,18 +456,19 @@ const PAGE_CSS =
   '*{box-sizing:border-box}' +
   'body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f1f5f9;' +
   'font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;padding:16px}' +
-  '.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:28px;max-width:380px;width:100%;' +
+  '.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:36px;max-width:400px;width:100%;' +
   'box-shadow:0 1px 3px rgba(0,0,0,.06)}' +
-  'h1{font-size:20px;margin:0 0 12px}' +
-  '.muted{color:#64748b;font-size:14px;margin:0 0 16px}' +
+  'h1{font-size:22px;margin:0 0 16px}' +
+  '.muted{color:#64748b;font-size:14px;margin:0 0 28px}' +
   '.opt{color:#94a3b8;font-weight:400}' +
-  'label{display:block;font-size:13px;font-weight:600;margin-bottom:12px}' +
-  'input{display:block;width:100%;margin-top:4px;padding:9px 10px;border:1px solid #cbd5e1;border-radius:6px;' +
+  'label{display:block;font-size:13px;font-weight:600;margin-bottom:20px}' +
+  'input{display:block;width:100%;margin-top:6px;padding:11px 12px;border:1px solid #cbd5e1;border-radius:6px;' +
   'font-size:14px;font-weight:400}' +
-  'button{width:100%;margin-top:8px;padding:10px;border:0;border-radius:6px;background:#0f172a;color:#fff;' +
+  'button{width:100%;margin-top:20px;padding:13px;border:0;border-radius:6px;background:#0f172a;color:#fff;' +
   'font-size:14px;font-weight:600;cursor:pointer}' +
-  '.cf-turnstile{margin:4px 0 12px}' +
-  '.err{color:#dc2626;font-size:13px;margin:0 0 12px}' +
+  '.cf-turnstile{margin:8px 0 4px}' +
+  'button.danger{background:#dc2626}button.danger:hover{background:#b91c1c}' +
+  '.err{color:#dc2626;font-size:13px;margin:0 0 16px}' +
   'a{color:#2563eb}' +
   '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}' +
   '.card{background:#1e293b;border-color:#334155}.muted{color:#94a3b8}' +
@@ -437,6 +502,7 @@ async function logEvent(
   req: Request,
   url: string | null,
   attachmentId: number | null = null,
+  newsletterId: string | null = null,
 ): Promise<void> {
   await env.DB
     .prepare(
@@ -452,13 +518,54 @@ async function logEvent(
       req.headers.get('cf-connecting-ip'),
     )
     .run();
+  const messages: Record<string, string> = {
+    open: `Subscriber ${subscriberId} opened campaign`,
+    click: `Subscriber ${subscriberId} clicked link`,
+    download: `Subscriber ${subscriberId} downloaded attachment`,
+    unsubscribe: `Subscriber ${subscriberId} unsubscribed`,
+  };
+  await writeLog(env.DB, {
+    source: 'tracker',
+    event: `tracker.${type}`,
+    campaignId,
+    newsletterId,
+    message: messages[type] ?? type,
+    detail: { subscriberId, url: url ?? undefined, attachmentId: attachmentId ?? undefined },
+  });
 }
 
-function unsubPage(sub: number, token: string): string {
-  return `<!doctype html><meta charset="utf-8"><title>Unsubscribe</title>
-<form method="post"><input type="hidden" name="t" value="${escapeAttr(token)}">
-<p>Click to unsubscribe subscriber #${sub}.</p>
-<button type="submit">Unsubscribe</button></form>`;
+function unsubSuccessPage(newsletterName: string, email: string): string {
+  const name = escapeHtml(newsletterName);
+  const safeEmail = escapeHtml(email);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<title>Unsubscribed</title>${PAGE_CSS}</head>` +
+    `<body><main class="card"><h1>Unsubscribed</h1>` +
+    `<p class="muted">${safeEmail ? `<strong>${safeEmail}</strong> has been ` : 'You have been '}unsubscribed from <strong>${name}</strong>.</p>` +
+    `</main></body></html>`;
+}
+
+function unsubPage(sub: number, token: string, newsletterName: string, email: string, siteKey: string, error: string | null): string {
+  const name = escapeHtml(newsletterName);
+  const safeEmail = escapeHtml(email);
+  const err = error ? `<p class="err">${escapeHtml(error)}</p>` : '';
+  const tsScript = siteKey
+    ? `<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>`
+    : '';
+  const tsWidget = siteKey
+    ? `<div class="cf-turnstile" data-sitekey="${escapeAttr(siteKey)}"></div>`
+    : '';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<title>Unsubscribe from ${name}</title>${PAGE_CSS}${tsScript}</head>` +
+    `<body><main class="card"><h1>Unsubscribe</h1>` +
+    `<p class="muted">You are about to unsubscribe${safeEmail ? ` <strong>${safeEmail}</strong>` : ''} from <strong>${name}</strong>.</p>` +
+    `${err}` +
+    `<form method="post" action="/u/${sub}">` +
+    `<input type="hidden" name="t" value="${escapeAttr(token)}">` +
+    `${tsWidget}` +
+    `<button type="submit" class="danger">Unsubscribe</button>` +
+    `</form></main></body></html>`;
 }
 
 function escapeAttr(s: string): string {

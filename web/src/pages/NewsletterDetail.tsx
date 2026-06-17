@@ -173,6 +173,7 @@ export default function NewsletterDetail() {
             onSave={saveSignup}
             saving={patch.isPending}
             subscribeBase={me.data?.tracking_base_url ?? ''}
+            baseDomain={me.data?.base_domain ?? ''}
           />
         ) : (
           <NewsletterAdmins newsletterId={id} canManage={canEdit} />
@@ -537,12 +538,14 @@ function SignupEditor({
   onSave,
   saving,
   subscribeBase,
+  baseDomain,
 }: {
   n: Newsletter;
   canEdit: boolean;
   onSave: (body: { slug?: string; allow_public_signup?: boolean }) => Promise<unknown>;
   saving: boolean;
   subscribeBase: string;
+  baseDomain: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [slug, setSlug] = useState(n.slug ?? '');
@@ -558,7 +561,13 @@ function SignupEditor({
   }, [editing, n.slug, n.allow_public_signup]);
 
   const dirty = slug.trim() !== (n.slug ?? '') || allow !== ((n.allow_public_signup ?? 0) === 1);
-  const base = subscribeBase.replace(/\/+$/, '');
+  // If tracking_base_url is still the placeholder default or empty, fall back
+  // to constructing the URL from the actual sending domain.
+  const resolvedBase =
+    !subscribeBase || subscribeBase.includes('yourdomain.com')
+      ? baseDomain ? `https://track.${baseDomain}` : ''
+      : subscribeBase;
+  const base = resolvedBase.replace(/\/+$/, '');
   // Use the saved slug for the live URL/snippet (the draft isn't public yet).
   const effectiveSlug = n.slug ?? '';
   const subscribeUrl = base && effectiveSlug ? `${base}/subscribe/${effectiveSlug}` : '';

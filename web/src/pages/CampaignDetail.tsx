@@ -1,14 +1,22 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api, CampaignDetail as Detail, Page, Send, TimeseriesRow } from '../api';
 import { StatusPill } from './Subscribers';
 import { CampaignStatus } from './Campaigns';
 import { PAGE_SIZE, Pagination } from '../components/Pagination';
 import { useState, type ReactNode } from 'react';
+import { RefreshIcon } from './Dashboard';
+import { useIdentity } from '../auth';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 export default function CampaignDetail() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const me = useIdentity();
+  const isSuper = me.data?.role === 'super_admin';
+
   const detail = useQuery({
     queryKey: ['campaign', id],
     queryFn: () => api<Detail>(`/api/campaigns/${id}`),
@@ -18,21 +26,67 @@ export default function CampaignDetail() {
     queryFn: () => api<{ items: TimeseriesRow[] }>(`/api/campaigns/${id}/timeseries?bucket=hour`),
   });
 
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleteMutation = useMutation({
+    mutationFn: () => api(`/api/campaigns/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
+      navigate('/campaigns');
+    },
+  });
+
   const evt = Object.fromEntries((detail.data?.events ?? []).map((e) => [e.type, e.n]));
   const chartData = pivotTimeseries(ts.data?.items ?? []);
 
+  const refreshing = detail.isFetching || ts.isFetching;
+  const status = detail.data?.campaign.status;
+  function refresh() { detail.refetch(); ts.refetch(); }
+
   return (
     <div className="space-y-6">
-      <div>
-        <Link to="/campaigns" className="text-sm text-slate-500 hover:underline dark:text-slate-400">← Campaigns</Link>
-        <h1 className="text-xl font-semibold mt-1">{detail.data?.campaign.subject ?? ''}</h1>
-        <div className="text-xs text-slate-500 dark:text-slate-400">
-          {detail.data?.campaign.newsletter_name && (
-            <span className="mr-2">{detail.data.campaign.newsletter_name}</span>
+      <div className="flex items-start gap-3">
+        <div>
+          <Link to="/campaigns" className="text-sm text-slate-500 hover:underline dark:text-slate-400">← Campaigns</Link>
+          <h1 className="text-xl font-semibold mt-1">{detail.data?.campaign.subject ?? ''}</h1>
+          <div className="text-xs text-slate-500 dark:text-slate-400">
+            {detail.data?.campaign.newsletter_name && (
+              <span className="mr-2">{detail.data.campaign.newsletter_name}</span>
+            )}
+            <span className="font-mono">{id}</span>
+          </div>
+        </div>
+        <div className="ml-auto mt-1 flex items-center gap-2">
+          {isSuper && status && status !== 'sending' && (
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="inline-flex items-center gap-1.5 text-sm border border-red-200 rounded px-3 py-1.5 text-red-600 bg-white hover:bg-red-50 dark:bg-slate-900 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+            >
+              Delete
+            </button>
           )}
-          <span className="font-mono">{id}</span>
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1.5 text-sm border border-slate-200 rounded px-3 py-1.5 bg-white hover:bg-slate-50 disabled:opacity-50 dark:bg-slate-900 dark:border-slate-700 dark:hover:bg-slate-800"
+          >
+            <RefreshIcon spinning={refreshing} />
+            Refresh
+          </button>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete campaign"
+        message={`Permanently delete "${detail.data?.campaign.subject ?? id}"? This removes all send records, events and logs for this campaign and cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        busy={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate()}
+        onCancel={() => setConfirmDelete(false)}
+      />
 
       {detail.data && (
         <>

@@ -58,8 +58,9 @@ export function pixelUrl(base: string, campaignId: string, subscriberId: number)
   return `${base}/o/${campaignId}/${subscriberId}.gif`;
 }
 
-export function unsubscribeUrl(base: string, subscriberId: number, token: string): string {
-  return `${base}/u/${subscriberId}?t=${encodeURIComponent(token)}`;
+export function unsubscribeUrl(base: string, subscriberId: number, token: string, campaignId?: string): string {
+  const c = campaignId ? `&c=${encodeURIComponent(campaignId)}` : '';
+  return `${base}/u/${subscriberId}?t=${encodeURIComponent(token)}${c}`;
 }
 
 // Rewrite all <a href="..."> in HTML to signed click URLs and append the open pixel.
