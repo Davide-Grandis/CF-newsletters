@@ -185,7 +185,7 @@ The browser installer asks for a short-lived API token with these permissions:
 The token should be restricted to the target account and zone. It is held only
 for the installation request and is not stored by the setup Worker.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Davide-Grandis/newsletter)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Davide-Grandis/CF-newsletters)
 
 Cloudflare first deploys the lightweight `cf-newsletter-installer` Worker. Open
 its generated URL and enter the account ID, domain and Cloudflare administrator
