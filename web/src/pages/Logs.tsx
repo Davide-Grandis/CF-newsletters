@@ -15,7 +15,7 @@ export default function Logs() {
   const [input, setInput] = useState('');
   const [q, setQ] = useState('');
   const [source, setSource] = useState('');
-  const [level, setLevel] = useState('');
+  const [level, setLevel] = useState('info');
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -154,7 +154,7 @@ export default function Logs() {
             <table className="w-full text-sm table-fixed">
               <thead className="bg-slate-50 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
                 <tr>
-                  <Th label="Time" tip="Date and time of the log entry (UTC)" className="whitespace-nowrap w-44" />
+                  <Th label="Time" tip="Date and time of the log entry (UTC)" className="whitespace-nowrap w-48" />
                   <Th label="Level" tip="Severity: debug, info, warn or error" className="w-16" />
                   <Th label="Newsletter" tip="Newsletter this entry is associated with" className="w-36" />
                   <Th label="Campaign" tip="Campaign this entry is associated with" className="w-72" />

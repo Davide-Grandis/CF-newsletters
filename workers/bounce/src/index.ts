@@ -254,14 +254,25 @@ async function syncDeliveryEvents(env: Env): Promise<void> {
     const errorDetail = ev.errorDetail?.trim() ?? null;
     const smtpCode = errorDetail?.match(/\b([45]\d{2})\b/)?.[1];
     const enhancedCode = errorDetail?.match(/\b([45]\.\d+\.\d+)\b/)?.[1];
-    let isHard: boolean;
-    if (smtpCode) {
-      isHard = smtpCode.startsWith('5');
+
+    // Block: policy/reputation rejection — enhanced code [45].7.x, or keywords
+    // in errorCause/errorDetail that indicate a blocklist or spam-policy refusal.
+    // The recipient address is presumed valid; suppression is not applied.
+    const isBlock =
+      (enhancedCode !== undefined && /^[45]\.7\./i.test(enhancedCode)) ||
+      /blacklist|blocklist|denylist|blocked|spam.*polic|polic.*reject|barred|reputation|spamhaus|barracuda/i.test(
+        `${errorCause ?? ''} ${errorDetail ?? ''}`,
+      );
+
+    let bounceType: 'hard' | 'soft' | 'block';
+    if (isBlock) {
+      bounceType = 'block';
+    } else if (smtpCode) {
+      bounceType = smtpCode.startsWith('5') ? 'hard' : 'soft';
     } else {
       const isSoft = !!errorCause && /temp|timeout|quota|full|over.*limit|too.*many|slow.*down|defer|try.*again/i.test(errorCause);
-      isHard = !isSoft;
+      bounceType = isSoft ? 'soft' : 'hard';
     }
-    const bounceType: 'hard' | 'soft' = isHard ? 'hard' : 'soft';
     const bounceCode = errorDetail ?? errorCause ?? null;
 
     await env.DB.batch([
@@ -269,12 +280,13 @@ async function syncDeliveryEvents(env: Env): Promise<void> {
         .prepare(
           'UPDATE subscribers SET ' +
           'bounce_count = bounce_count + 1, ' +
-          'hard_bounce_count = hard_bounce_count + ?, ' +
-          "soft_bounce_count = CASE WHEN ? = 'soft' THEN soft_bounce_count + 1 ELSE soft_bounce_count END, " +
+          "hard_bounce_count  = CASE WHEN ? = 'hard'  THEN hard_bounce_count  + 1 ELSE hard_bounce_count  END, " +
+          "soft_bounce_count  = CASE WHEN ? = 'soft'  THEN soft_bounce_count  + 1 ELSE soft_bounce_count  END, " +
+          "block_bounce_count = CASE WHEN ? = 'block' THEN block_bounce_count + 1 ELSE block_bounce_count END, " +
           "last_bounce_type = ?, last_bounce_code = ?, last_bounce_at = datetime('now') " +
           'WHERE id = ?',
         )
-        .bind(isHard ? 1 : 0, bounceType, bounceType, bounceCode, send.subscriber_id),
+        .bind(bounceType, bounceType, bounceType, bounceType, bounceCode, send.subscriber_id),
       env.DB
         .prepare(
           "UPDATE subscribers SET status = 'bounced' WHERE id = ? AND status = 'active' AND hard_bounce_count >= ?",

@@ -64,7 +64,7 @@ export default function Help() {
         <p className="text-xs text-slate-400 dark:text-slate-500">
           Upload one with:{' '}
           <code className="bg-slate-100 px-1 rounded dark:bg-slate-800">
-            wrangler r2 object put newsletter-admin/help.md --jurisdiction eu --file ./README.md --content-type text/markdown
+            wrangler r2 object put newsletter-admin/help.md --jurisdiction eu --remote --file ./docs/help.md --content-type text/markdown
           </code>
         </p>
       </div>
@@ -186,6 +186,7 @@ const mdComponents = {
   h1: (p: any) => <h1 className="text-2xl font-semibold mt-6 mb-3" {...p} />,
   h2: (p: any) => <h2 className="text-xl font-semibold mt-6 mb-2 border-b border-slate-200 dark:border-slate-800 pb-1" {...p} />,
   h3: (p: any) => <h3 className="text-lg font-medium mt-4 mb-2" {...p} />,
+  h4: (p: any) => <h4 className="text-base font-semibold mt-3 mb-1 text-slate-800 dark:text-slate-200" {...p} />,
   p: (p: any) => <p className="my-3 leading-relaxed text-slate-700 dark:text-slate-300" {...p} />,
   ul: (p: any) => <ul className="list-disc pl-6 my-3 space-y-1 text-slate-700 dark:text-slate-300" {...p} />,
   ol: (p: any) => <ol className="list-decimal pl-6 my-3 space-y-1 text-slate-700 dark:text-slate-300" {...p} />,

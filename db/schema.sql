@@ -54,12 +54,14 @@ CREATE TABLE IF NOT EXISTS subscribers (
   subscribed_at   TEXT NOT NULL DEFAULT (datetime('now')),
   unsubscribed_at TEXT,
   bounce_count    INTEGER NOT NULL DEFAULT 0,
-  -- Split counters: hard (permanent, 5.x.x / mailbox-not-found) disable on
-  -- HARD_BOUNCE_THRESHOLD; soft (transient, 4.x.x / full mailbox) only disable
-  -- on SOFT_BOUNCE_THRESHOLD within SOFT_BOUNCE_WINDOW_DAYS and reset on a
-  -- successful delivery. `bounce_count` stays as the combined lifetime total.
-  hard_bounce_count INTEGER NOT NULL DEFAULT 0,
-  soft_bounce_count INTEGER NOT NULL DEFAULT 0,
+  -- Split counters. `bounce_count` is the combined lifetime total.
+  -- hard  (permanent, non-7 5.x.x): suppress on HARD_BOUNCE_THRESHOLD (default 1).
+  -- soft  (transient, 4.x.x / full mailbox): tracked but not yet auto-suppressed.
+  -- block (policy, [45].7.x / reputation/blocklist): tracked, never auto-suppressed;
+  --        the address is valid but a sending-policy issue prevented delivery.
+  hard_bounce_count  INTEGER NOT NULL DEFAULT 0,
+  soft_bounce_count  INTEGER NOT NULL DEFAULT 0,
+  block_bounce_count INTEGER NOT NULL DEFAULT 0,
   -- Classification of the most recent bounce, for the UI: 'hard' | 'soft' |
   -- 'block', plus the raw RFC 3463 status code (e.g. '5.1.1').
   last_bounce_type  TEXT CHECK (last_bounce_type IN ('hard','soft','block')),

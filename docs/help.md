@@ -194,21 +194,77 @@ Syncs are triggered two ways:
 
 Together these give close to complete bounce coverage.
 
-For each matched failure:
-1. The subscriber's bounce counters (`bounce_count`, `hard_bounce_count` / `soft_bounce_count`) are incremented.
-2. The `sends` record is updated to `status = 'bounced'` with the error detail stored in the `error` field.
-3. A `bounce` event is inserted (visible on the campaign's Logs page and the Bounces page).
-4. If `hard_bounce_count` reaches the threshold (`HARD_BOUNCE_THRESHOLD`, default 1), the subscriber's status is set to **bounced** and they are excluded from future sends.
+For each matched failure the bounce worker performs these steps:
+
+1. **Classifies** the failure as **hard**, **soft**, or **block** (see Classification below).
+2. **Increments counters** on the subscriber:
+   - `bounce_count` (lifetime total, always)
+   - `hard_bounce_count` / `soft_bounce_count` / `block_bounce_count` (type-specific)
+   - Updates `last_bounce_type`, `last_bounce_code`, and `last_bounce_at`.
+3. **Updates the `sends` row** to `status = 'bounced'` with the raw error stored in `error`.
+4. **Inserts a `bounce` event** (visible on the campaign's Logs page and the Bounces page).
+5. **Suppresses the subscriber** (only for hard bounces): if `hard_bounce_count` reaches `HARD_BOUNCE_THRESHOLD` (default **1**), the subscriber's `status` is set to `bounced` and they are excluded from all future sends.
+
+Soft and block bounces increment counters and log the event but **do not suppress** the subscriber.
 
 ### Classification
 
-Bounces are classified as **hard** (permanent failure) or **soft** (transient failure) using the following priority:
+Bounces are classified into three types using the following priority (block is checked first):
 
-1. **SMTP reply code** extracted from `errorDetail` (e.g. `550`, `421`):
-   - `5xx` → hard
-   - `4xx` → soft
-2. **Enhanced status code** extracted from `errorDetail` (e.g. `5.1.1`, `4.2.2`) — used for display and logging only; classification uses the 3-digit code above.
-3. **`errorCause` pattern match** (Cloudflare-assigned string) — if no numeric code is present, keywords like `temp`, `timeout`, `quota`, `full`, `defer` → soft; everything else → hard.
+#### Block (policy/reputation rejection)
+The recipient address is presumed valid, but the receiving server rejected the message due to a sending-policy issue (blocklist, IP/domain reputation, spam filtering, DMARC). The subscriber is **not** suppressed — the fix is on the sender side (improve reputation, fix DMARC/SPF, request blocklist removal).
+
+Block is checked **first**, before soft and hard, so it takes priority even over 5xx SMTP codes (a `550 5.7.1` would otherwise be classified as hard, but block wins).
+
+**Trigger 1 — Enhanced status code subject `7`**
+
+The enhanced code format is `class.subject.detail`. Subject `7` always means security or policy. Both 4xx (transient) and 5xx (permanent) variants qualify:
+
+| Enhanced code | Typical SMTP | Example situation |
+|:---:|:---:|---|
+| `4.7.0` | 421 | Temporary policy rejection, greylisting |
+| `4.7.1` | 450 | Temporary auth/IP block |
+| `5.7.0` | 554 | Permanent policy rejection |
+| `5.7.1` | 550 | DMARC failure, spam filter, blocklist |
+| `5.7.x` | 550 | Any other security/policy refusal |
+
+**Trigger 2 — Keyword match** in `errorCause` or `errorDetail`:
+
+| Pattern | Matches |
+|---|---|
+| `blacklist` / `blocklist` / `denylist` | Explicit blocklist mentions |
+| `blocked` | Generic block language |
+| `spam polic*` / `polic* reject` | Spam policy / policy rejection |
+| `barred` | Barred sender/domain |
+| `reputation` | IP or domain reputation |
+| `spamhaus` / `barracuda` | Named blocklist services |
+
+#### Soft (transient failure)
+Temporary failure — the address is valid but delivery is not possible right now (full mailbox, server overloaded). The subscriber is **not** suppressed.
+
+Detected (after ruling out block) by:
+1. **SMTP reply code** `4xx` extracted from `errorDetail`.
+2. **Keyword match** in `errorCause` (when no numeric code): `temp`, `timeout`, `quota`, `full`, `over limit`, `too many`, `slow down`, `defer`, `try again`.
+
+#### Hard (permanent failure)
+The address does not exist or is permanently unreachable. The subscriber is **suppressed** once `hard_bounce_count ≥ HARD_BOUNCE_THRESHOLD` (default 1 — immediate suppression on the first hard bounce).
+
+Detected (after ruling out block and soft) by:
+1. **SMTP reply code** `5xx` (except `5.7.x` which is block).
+2. **Fallback** — anything not matching block or soft patterns is treated as hard.
+
+#### Impact comparison
+
+| Action | Hard | Soft | Block |
+|---|:---:|:---:|:---:|
+| `bounce_count` +1 | ✅ | ✅ | ✅ |
+| `hard_bounce_count` +1 | ✅ | — | — |
+| `soft_bounce_count` +1 | — | ✅ | — |
+| `block_bounce_count` +1 | — | — | ✅ |
+| `last_bounce_type` updated | ✅ | ✅ | ✅ |
+| `sends` row → `bounced` | ✅ | ✅ | ✅ |
+| `bounce` event logged | ✅ | ✅ | ✅ |
+| **Subscriber suppressed** | ✅ (on first bounce by default) | ❌ | ❌ |
 
 ### Most common SMTP and enhanced status codes
 
@@ -220,17 +276,23 @@ Bounces are classified as **hard** (permanent failure) or **soft** (transient fa
 | 450 | 4.2.1 | 4 = transient failure<br>2 = mailbox<br>1 = mailbox disabled, not accepting messages | **Soft** | Mailbox temporarily unavailable. |
 | 451 | 4.3.0 | 4 = transient failure<br>3 = mail system<br>0 = other / undefined status | **Soft** | Requested action aborted — local processing error at the receiving server. |
 | 452 | 4.2.2 | 4 = transient failure<br>2 = mailbox<br>2 = mailbox full | **Soft** | Insufficient system storage at the receiving server. |
+| 421 | 4.7.0 | 4 = transient failure<br>7 = security or policy<br>0 = other security status | **Block** | Transient policy rejection (e.g. greylisting, temporary IP block). Try again later. |
+| 450 | 4.7.1 | 4 = transient failure<br>7 = security or policy<br>1 = delivery not authorised | **Block** | Temporary policy rejection — delivery not authorised right now. |
 | 550 | 5.1.1 | 5 = permanent failure<br>1 = addressing<br>1 = bad destination mailbox address | **Hard** | Mailbox does not exist. The most common permanent bounce — the address is invalid. |
 | 550 | 5.1.2 | 5 = permanent failure<br>1 = addressing<br>2 = bad destination system address | **Hard** | Bad destination mailbox address. |
 | 550 | 5.2.1 | 5 = permanent failure<br>2 = mailbox<br>1 = mailbox disabled | **Hard** | Mailbox disabled; not accepting messages. |
-| 550 | 5.5.1 | 5 = permanent failure<br>5 = mail delivery protocol<br>1 = invalid command | **Hard** | Invalid SMTP command (protocol error). In practice also returned when the destination domain does not exist (e.g. a misspelled domain) — the DNS lookup fails and the sending server receives a protocol-level error in response. Consider investigating rather than automatically suppressing the subscriber. |
-| 550 | 5.7.1 | 5 = permanent failure<br>7 = security or policy<br>1 = delivery not authorised | **Hard** | Delivery not authorised. The receiving server's policy rejected the message (spam, DMARC failure, blocklist). |
+| 550 | 5.5.1 | 5 = permanent failure<br>5 = mail delivery protocol<br>1 = invalid command | **Hard** | Invalid SMTP command (protocol error). In practice also returned when the destination domain does not exist (e.g. a misspelled domain). |
+| 550 | 5.7.1 | 5 = permanent failure<br>7 = security or policy<br>1 = delivery not authorised | **Block** | Delivery not authorised — receiving server's policy rejected the message (spam filter, DMARC failure, blocklist). Address likely valid; investigate sender reputation. |
 | 551 | 5.1.6 | 5 = permanent failure<br>1 = addressing<br>6 = destination mailbox has moved, no forwarding address | **Hard** | User not local; forwarding not permitted. |
 | 552 | 5.2.2 | 5 = permanent failure<br>2 = mailbox<br>2 = mailbox full | **Soft** | Mailbox full / over quota. Transient — the address exists but cannot receive right now. |
 | 553 | 5.1.3 | 5 = permanent failure<br>1 = addressing<br>3 = bad destination mailbox address syntax | **Hard** | Bad destination mailbox syntax. |
-| 554 | 5.7.0 | 5 = permanent failure<br>7 = security or policy<br>0 = other / undefined security status | **Hard** | Transaction failed; message rejected for policy reasons. |
+| 554 | 5.7.0 | 5 = permanent failure<br>7 = security or policy<br>0 = other / undefined security status | **Block** | Transaction failed; message rejected for policy reasons (spam, blocklist, content filter). |
 
-Cloudflare may also return a string `errorCause` without a numeric code (e.g. `mailbox_gmail_unknown`, `unknown`). These are treated as **hard** unless the string contains a recognised transient keyword.
+Cloudflare may also return a string `errorCause` without a numeric code (e.g. `mailbox_gmail_unknown`, `unknown`). These are treated as **hard** unless a recognised soft or block keyword is present.
+
+### Out-of-office auto-replies
+
+Auto-replies (vacation notices, OOO messages) are **not detected** and have **no effect** on subscriber status. When a subscriber's server sends an OOO reply it does so after accepting the original message, so Cloudflare records a successful delivery — no `deliveryFailed` event is produced. The auto-reply email itself arrives at the inbound address but is not a bounce and is silently ignored. The subscriber remains `active` and continues receiving future campaigns normally.
 
 ## Data retention & cleanup
 

@@ -2,8 +2,15 @@
   "name": "newsletter",
   "private": true,
   "version": "1.2.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
+    "build": "npm run build:installer",
+    "build:installer": "npm run build:web && node scripts/build-installer.mjs",
+    "deploy": "npm run build:installer && wrangler deploy",
+    "cf-typegen": "wrangler types worker-configuration.d.ts",
+    "install:cloudflare": "node scripts/install.mjs",
+    "install:cloudflare:dry-run": "node scripts/install.mjs --dry-run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build:web": "cd web && npm run build",
     "deploy:admin": "npm run build:web && cd workers/admin && wrangler deploy",
@@ -11,9 +18,9 @@
     "db:apply": "wrangler d1 execute newsletter_db --file=db/schema.sql"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240925.0",
+    "esbuild": "^0.28.2",
     "typescript": "^5.5.4",
-    "wrangler": "^4.103.0"
+    "wrangler": "^4.131.0"
   },
   "dependencies": {
     "postal-mime": "^2.2.7"

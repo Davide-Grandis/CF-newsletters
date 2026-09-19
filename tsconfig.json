@@ -4,7 +4,6 @@
     "module": "ES2022",
     "moduleResolution": "Bundler",
     "lib": ["ES2022"],
-    "types": ["@cloudflare/workers-types"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
@@ -13,5 +12,5 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["workers/**/*.ts", "shared/**/*.ts"]
+  "include": ["worker-configuration.d.ts", "workers/**/*.ts", "shared/**/*.ts"]
 }

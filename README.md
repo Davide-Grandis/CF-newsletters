@@ -109,11 +109,13 @@ used instead of `/assets/` to avoid colliding with the Vite-built SPA
 bundle. Because the whole worker sits behind Access, these objects are
 only reachable by authenticated operators. The bucket is EU-jurisdiction,
 so its binding in `workers/admin/wrangler.toml` declares
-`jurisdiction = "eu"`. Upload a file with:
+`jurisdiction = "eu"`. Upload a file with (note the **`--remote`** flag —
+wrangler v4's `r2 object` commands default to the *local* simulator and will
+silently not touch the production bucket without it):
 
 ```bash
 wrangler r2 object put newsletter-admin/logoenea1.png \
-  --jurisdiction eu --file ./logoenea1.png --content-type image/png
+  --jurisdiction eu --remote --file ./logoenea1.png --content-type image/png
 ```
 
 Pages:
@@ -160,17 +162,62 @@ npm run deploy:admin             # builds web/ then wrangler deploy
 During development, run `cd web && npm run dev` (Vite proxies `/api/*` to
 `localhost:8787`, so run `wrangler dev` in `workers/admin/` in parallel).
 
-## Prerequisites
+## Install on Cloudflare
+
+### Account requirements
+
+Before deploying, the target Cloudflare account must have:
+
+- a domain added as an active Cloudflare zone;
+- Workers, D1, R2 and Queues available;
+- Zero Trust Access available;
+- Email Routing available for the zone;
+- Email Sending entitlement for the zone.
+
+The browser installer asks for a short-lived API token with these permissions:
+
+- **Account:** Workers Scripts Write, D1 Write, Queues Write, Workers R2
+  Storage Write, Access Organizations/Identity Providers/Groups Write, Access
+  Apps and Policies Write, Zero Trust Write and Email Read;
+- **Zone:** Zone Read, Zone Settings Write, Workers Routes Write, Email Routing
+  Rules Write and Analytics Read.
+
+The token should be restricted to the target account and zone. It is held only
+for the installation request and is not stored by the setup Worker.
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Davide-Grandis/newsletter)
+
+Cloudflare first deploys the lightweight `cf-newsletter-installer` Worker. Open
+its generated URL and enter the account ID, domain and Cloudflare administrator
+email. The installer then creates or reuses D1, both queues and both R2 buckets;
+applies and initializes the schema; deploys all six isolated production
+Workers; configures the queue consumer and cron triggers; creates the custom
+domains; creates the Zero Trust organization, administrator email list, Access
+application and allow policy; configures Email Routing; and assigns the supplied
+administrator as the initial cf-newsletter `super_admin`. Live progress shows
+each component being created or configured.
+
+After completion, delete the temporary `cf-newsletter-installer` Worker, then
+open **Compute → Email Service → Email Sending**, onboard the selected domain if
+necessary, and wait for DNS/DKIM to become active. This final check is not
+automated because the current Email Sending onboarding API requires a legacy
+global API key, which the installer intentionally does not request.
+
+For terminal-based installation or troubleshooting, run `npm install` followed
+by `npm run install:cloudflare`. Use `npm run install:cloudflare:dry-run` to
+inspect that fallback flow without changing Cloudflare resources. The detailed
+manual procedure below is retained for custom deployments.
+
+## Prerequisites (manual installation)
 
 - Cloudflare zone with Email Routing enabled (MX/SPF set up).
-- Email Sending (beta) enabled on the zone, DKIM published, the
-  `SEND_EMAIL` binding allow-listed for `newsletter@yourdomain.com`.
-- `wrangler` >= 3, Node 20+.
+- Email Sending enabled on the zone with DNS/DKIM active.
+- `wrangler` 4.x and Node 20+.
 - Once deployed, the **default settings** must be configured to match your zone
   (sending identity, domains, Email Routing) before the first send — see
   [*Initialization*](#initialization).
 
-## Provisioning
+## Provisioning (manual installation)
 
 ```bash
 # D1
