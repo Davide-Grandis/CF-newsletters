@@ -7,7 +7,7 @@
   "scripts": {
     "build": "npm run build:installer",
     "build:installer": "npm ci --prefix web --progress=false && npm run build:web && node scripts/build-installer.mjs",
-    "deploy": "npm run build:installer && wrangler deploy",
+    "deploy": "npm run build:installer && WRANGLER_CI_OVERRIDE_NAME=cf-newsletters-installer wrangler deploy --name cf-newsletters-installer",
     "cf-typegen": "wrangler types worker-configuration.d.ts",
     "install:cloudflare": "node scripts/install.mjs",
     "install:cloudflare:dry-run": "node scripts/install.mjs --dry-run",

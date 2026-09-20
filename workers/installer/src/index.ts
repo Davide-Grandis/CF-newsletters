@@ -236,7 +236,7 @@ async function runInstall(input: InstallRequest, update: (state: string, message
   await configureDomains(input, zoneId);
   await configureRouting(input, zoneId);
 
-  update('complete', `Installation complete. Open https://console.${input.domain}. Verify Email Sending and DKIM, then delete the cf-newsletter-installer Worker.`);
+  update('complete', `Installation complete. Open https://console.${input.domain}. Verify Email Sending and DKIM, then delete the cf-newsletters-installer Worker.`);
 }
 
 export default {

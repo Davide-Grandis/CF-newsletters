@@ -187,7 +187,7 @@ for the installation request and is not stored by the setup Worker.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Davide-Grandis/CF-newsletters)
 
-Cloudflare first deploys the lightweight `cf-newsletter-installer` Worker. Open
+Cloudflare first deploys the lightweight `cf-newsletters-installer` Worker. Open
 its generated URL and enter the account ID, domain and Cloudflare administrator
 email. The installer then creates or reuses D1, both queues and both R2 buckets;
 applies and initializes the schema; deploys all six isolated production
@@ -197,7 +197,7 @@ application and allow policy; configures Email Routing; and assigns the supplied
 administrator as the initial cf-newsletter `super_admin`. Live progress shows
 each component being created or configured.
 
-After completion, delete the temporary `cf-newsletter-installer` Worker, then
+After completion, delete the temporary `cf-newsletters-installer` Worker, then
 open **Compute → Email Service → Email Sending**, onboard the selected domain if
 necessary, and wait for DNS/DKIM to become active. This final check is not
 automated because the current Email Sending onboarding API requires a legacy
