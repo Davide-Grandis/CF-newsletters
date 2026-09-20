@@ -213,7 +213,7 @@ compromised; otherwise keep it stable.
 
 | Setting / Secret | Where | Default | Meaning |
 | --- | --- | --- | --- |
-| `TRACKING_ENABLED` | D1 settings | `true` | When `false`, links are not rewritten and no pixel is added. |
+| `TRACKING_ENABLED` | D1 settings | `false` | When `false`, links are not rewritten and no pixel is added. Enable it under **Settings → Tracking & bounce → Tracking** when analytics are required. |
 | `TRACKING_BASE_URL` | D1 settings | `https://track.yourdomain.com` | Base URL of the tracker worker — prefix for all tracking, download, and unsubscribe URLs. |
 | `LINK_SIGNING_KEY` | Worker Secret (consumer + tracker) | — | HMAC key for click and open-pixel URLs. Must match on both workers. |
 | `ATTACHMENT_SIGNING_KEY` | Worker Secret (consumer + tracker) | — | Separate HMAC key for download URLs. Must match on both workers. |

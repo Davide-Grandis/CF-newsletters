@@ -99,7 +99,7 @@ export default {
         const ok = await checkUnsubToken(env, sub, token);
         if (!ok) return htmlResponse(pageShell('Invalid link', '<p>This unsubscribe link is invalid or has expired.</p>'), 403);
         const cfg = await loadSettings(env.DB, env);
-        const siteKey = (cfg.TURNSTILE_ENABLED ?? 'true') !== 'false' ? (cfg.TURNSTILE_SITE_KEY ?? '') : '';
+        const siteKey = (cfg.TURNSTILE_ENABLED ?? 'false') === 'true' ? (cfg.TURNSTILE_SITE_KEY ?? '') : '';
         const nlRow = await env.DB
           .prepare('SELECT n.name, s.email FROM subscribers s JOIN newsletters n ON n.id = s.newsletter_id WHERE s.id = ?')
           .bind(sub)
@@ -118,7 +118,7 @@ export default {
         const unsubCampaignId = (form ? String(form.get('c') ?? '') : '') || url.searchParams.get('c') || null;
         if (!isOneClick) {
           const cfg = await loadSettings(env.DB, env);
-          const turnstileEnabled = (cfg.TURNSTILE_ENABLED ?? 'true') !== 'false';
+          const turnstileEnabled = (cfg.TURNSTILE_ENABLED ?? 'false') === 'true';
           const siteKey = cfg.TURNSTILE_SITE_KEY ?? '';
           if (turnstileEnabled && siteKey && env.TURNSTILE_SECRET_KEY) {
             const tsToken = form ? String(form.get('cf-turnstile-response') ?? '') : '';
@@ -194,7 +194,7 @@ async function handleSubscribe(
   const cfg = await loadSettings(env.DB, env);
   cfg.TRACKING_BASE_URL = resolveTrackingBaseUrl(cfg.TRACKING_BASE_URL ?? '', cfg.BASE_DOMAIN ?? '');
   const siteKey = cfg.TURNSTILE_SITE_KEY ?? '';
-  const turnstileEnabled = (cfg.TURNSTILE_ENABLED ?? 'true') !== 'false';
+  const turnstileEnabled = (cfg.TURNSTILE_ENABLED ?? 'false') === 'true';
   const nl = await findSignupNewsletter(env, slug);
   if (!nl) return htmlResponse(pageShell('Not found', '<p>This subscription page is not available.</p>'), 404);
 

@@ -46,23 +46,23 @@ Configure it on the newsletter's **Signup** tab:
   hyphens). Leave the field empty when saving to re-generate it from the name.
 - **Public subscribe URL** — the live link to share.
 - **Embed snippet** — an `<iframe>` you can paste into any website to embed the
-  form (it includes the bot-protection widget).
+  form (it includes the bot-protection widget when Turnstile is enabled).
 
 How it works:
 
-1. A visitor enters their email (and optional name) and passes a **Cloudflare
-   Turnstile** bot check.
+1. A visitor enters their email (and optional name). When Turnstile protection
+   is enabled, they also pass the **Cloudflare Turnstile** bot check.
 2. The pipeline records a *pending* subscriber and emails them a confirmation
    link. The response is always the same neutral "check your inbox" message, so
    it can't be used to probe who is subscribed.
 3. Clicking the link confirms the subscription (and re-activates a previously
    unsubscribed/bounced address). Only then do they start receiving mail.
 
-**Prerequisites (one-time, super admin):** create a Turnstile widget for the
-domain, set its **site key** under **Settings → Tracking → Public signup**
-(`TURNSTILE_SITE_KEY`), and set the matching secret on the tracker worker
-(`wrangler secret put TURNSTILE_SECRET_KEY`). Until both are set, the public page
-reports itself unavailable.
+**Recommended after installation (super admin):** Turnstile protection starts
+disabled. Create a Turnstile widget for the tracking domain, set the matching
+secret on the tracker worker (`wrangler secret put TURNSTILE_SECRET_KEY --name
+newsletter-tracker`), then open **Settings → Subscribe → Public signup**, enter
+the site key and enable **Turnstile bot protection**.
 
 ## Subscriber CSV import
 
@@ -113,8 +113,10 @@ it is independent of status and defaults to False for newly added subscribers.
 
 ## Email tracking & content transformation
 
-Before each copy is sent, the consumer worker **transforms the HTML body** of the
-campaign so engagement can be measured and large files delivered. The original
+Before each copy is sent, the consumer worker can **transform the HTML body** of
+the campaign so engagement can be measured and large files delivered. Tracking
+starts disabled; link rewriting and the open pixel are added only when enabled.
+The original
 issue the author sent is archived untouched; only the per-recipient outgoing copy
 is rewritten. The transformations are:
 
@@ -146,8 +148,9 @@ is rewritten. The transformations are:
 
 ### Turning tracking off
 
-The **Settings → Tracking** toggle (`TRACKING_ENABLED`) controls only the first
-two transformations. When **off**:
+The **Settings → Tracking & bounce → Tracking** toggle (`TRACKING_ENABLED`)
+controls only the first two transformations and starts off by default. When
+**off**:
 
 - Links are sent **unmodified** (recipients see and click your real URLs), and
 - the open pixel is **omitted**.

@@ -122,10 +122,10 @@ export const SETTINGS_DEFAULTS: Record<SettingKey, string> = {
     '--\n' +
     'You are receiving this email because you subscribed to {{newsletter_name}}.\n' +
     'Unsubscribe: {{unsubscribe_url}}',
-  TRACKING_ENABLED: 'true',
-  TURNSTILE_ENABLED: 'true',
-  // Empty by default: set the Turnstile site key from the Settings page once the
-  // widget exists. Empty means the public signup page is unavailable.
+  TRACKING_ENABLED: 'false',
+  TURNSTILE_ENABLED: 'false',
+  // Empty by default: set the Turnstile site key from the Settings page before
+  // enabling Turnstile protection for public signup.
   TURNSTILE_SITE_KEY: '',
   MAX_ATTACHMENT_BYTES: '3145728',
   MAX_TOTAL_ATTACHMENT_BYTES: '10485760',

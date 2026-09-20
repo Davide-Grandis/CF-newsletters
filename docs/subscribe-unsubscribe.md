@@ -129,16 +129,16 @@ the most machinery. It is **opt-in per newsletter** and **off by default**.
       unique across newsletters. Submitting an **empty** slug re-derives one
       from the current name.
   - Shows the live **subscribe URL** and an **`<iframe>` embed snippet** (the
-    iframe is the recommended embed because it carries the Turnstile widget).
+    iframe carries the Turnstile widget when protection is enabled).
   - Persisted via `PATCH /api/newsletters/:id` (`slug`, `allow_public_signup`).
 - **Global, one-time (super admin):**
-  - Create a **Cloudflare Turnstile** widget for the domain.
-  - Set its **site key** under **Settings → Tracking → Public signup**
-    (`TURNSTILE_SITE_KEY`, a value in the D1 `settings` table).
-  - Set the matching **secret** on the tracker worker:
-    `wrangler secret put TURNSTILE_SECRET_KEY`.
   - Email Sending (DKIM) must be enabled on the domain (the tracker uses a
     `send_email` binding to deliver the confirmation).
+  - Turnstile starts disabled. Recommended: create a **Cloudflare Turnstile**
+    widget for the tracking domain, set the matching tracker-worker secret with
+    `wrangler secret put TURNSTILE_SECRET_KEY --name newsletter-tracker`, then
+    open **Settings → Subscribe → Public signup**, enter the site key and enable
+    **Turnstile bot protection**.
 
 #### The hosted page & flow
 
@@ -151,10 +151,12 @@ All served by the **tracker worker** (`workers/tracker/src/index.ts`) at
 2. `findSignupNewsletter(slug)` looks up the newsletter and returns it only if
    it **exists, is `enabled=1`, and `allow_public_signup=1`** — otherwise a
    generic **404** (so disabled/non-existent slugs are indistinguishable).
-3. If Turnstile isn't fully configured (`TURNSTILE_SITE_KEY` +
-   `TURNSTILE_SECRET_KEY` + `SEND_EMAIL` binding) → **503 "Signup unavailable"**.
+3. If the `SEND_EMAIL` binding is missing, or Turnstile is enabled without both
+   `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`, returns **503 "Signup
+   unavailable"**.
 4. Otherwise renders a branded, mobile-friendly form (`subscribeForm()`): email,
-   optional name, and the Cloudflare Turnstile widget. Light/dark via CSS.
+   optional name, and—when enabled—the Cloudflare Turnstile widget. Light/dark
+   via CSS.
 
 **`POST /subscribe/<slug>`**
 
@@ -162,9 +164,10 @@ All served by the **tracker worker** (`workers/tracker/src/index.ts`) at
 2. Parses `email`, `name`, `cf-turnstile-response`.
 3. **Validates email** with a basic regex; invalid → re-render form with error
    (HTTP 400).
-4. **Verifies Turnstile** (`verifyTurnstile()`): server-to-server POST to
-   `https://challenges.cloudflare.com/turnstile/v0/siteverify` with the secret,
-   token and client IP. Any non-success → re-render form with error (400).
+4. When Turnstile is enabled, **verifies Turnstile** (`verifyTurnstile()`):
+   server-to-server POST to `https://challenges.cloudflare.com/turnstile/v0/siteverify`
+   with the secret, token and client IP. Any non-success → re-render form with
+   error (400).
 5. **Decides whether to (re)send a confirmation** by looking up the existing
    row:
    - If the address is **already confirmed and active**
