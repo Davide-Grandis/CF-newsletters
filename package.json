@@ -1,7 +1,7 @@
 {
   "name": "newsletter",
   "private": true,
-  "version": "1.2.0",
+  "version": "2.1.0",
   "license": "MIT",
   "type": "module",
   "scripts": {

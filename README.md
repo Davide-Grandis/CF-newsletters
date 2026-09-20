@@ -185,32 +185,44 @@ The browser installer asks for a short-lived API token with these permissions:
 The token should be restricted to the target account and zone. It is held only
 for the installation request and is not stored by the setup Worker.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Davide-Grandis/CF-newsletters)
+### Hosted installer
 
-On Cloudflare's **Set up your application** page, use
-`cf-newsletters-installer` for both the new Git repository name and the
-Worker/Application name when those are presented as separate fields. Workers
-Builds controls the Worker name and may override `wrangler.jsonc` with the
-application name selected on that page. If no separate Worker-name field is
-shown and Cloudflare uses `cf-newsletters`, installation still works: this is
-only the temporary setup Worker, not one of the production Workers.
+Open the hosted installer—no GitHub account or repository is required:
 
-Cloudflare first deploys that lightweight setup Worker. Open its generated URL
-and enter the account ID, domain and Cloudflare administrator email. The
-installer then creates or reuses D1, both queues and both R2 buckets; applies
-and initializes the schema; deploys all six isolated production Workers;
-configures the queue consumer and cron triggers; creates the custom domains;
-creates the Zero Trust organization, administrator email list, Access
-application and allow policy; configures Email Routing; and assigns the supplied
-administrator as the initial cf-newsletter `super_admin`. Live progress shows
-each component being created or configured.
+**[Open the cf-newsletter installer](https://cf-newsletters-installer.dav-web-app.workers.dev)**
 
-After completion, delete the temporary setup Worker (whether Cloudflare named it
-`cf-newsletters-installer` or `cf-newsletters`), then
-open **Compute → Email Service → Email Sending**, onboard the selected domain if
-necessary, and wait for DNS/DKIM to become active. This final check is not
-automated because the current Email Sending onboarding API requires a legacy
-global API key, which the installer intentionally does not request.
+Enter the target account ID, domain and Cloudflare administrator email. The
+installer creates or reuses D1, both queues and both R2 buckets; applies the
+schema and ordered migrations; deploys all six isolated production Workers;
+configures the queue consumer, cron triggers and custom domains; creates the
+Zero Trust organization, administrator email list, Access application and allow
+policy; configures Email Routing; and assigns the supplied administrator as the
+initial cf-newsletter `super_admin`. Live progress shows each component being
+created or configured.
+
+The hosted Worker receives the short-lived token only in the active HTTPS
+installation request. It does not persist the token in D1, R2, Worker variables
+or its own account. Revoke the token after the operation finishes.
+
+After a new installation, open **Compute → Email Service → Email Sending**,
+onboard the selected domain if necessary, and wait for DNS/DKIM to become
+active. This check is not automated because the current Email Sending onboarding
+API requires a legacy global API key, which the installer intentionally does not
+request.
+
+### Updates
+
+Open the same hosted installer whenever a newer release is published. It detects
+an existing `newsletter_db`, reads its installed product version, applies only
+pending migrations, updates the six Worker bundles and admin assets in place,
+and records the new version after every deployment step succeeds. Existing D1
+records, R2 objects, queues, custom domains, Access configuration and Worker
+secrets are preserved. Optional runtime-token fields can be left blank to keep
+the currently stored secrets. Downgrades are refused.
+
+Updates are explicit rather than automatic: review the release, create a new
+short-lived token, run the hosted updater, verify the console, then revoke the
+token.
 
 For terminal-based installation or troubleshooting, run `npm install` followed
 by `npm run install:cloudflare`. Use `npm run install:cloudflare:dry-run` to

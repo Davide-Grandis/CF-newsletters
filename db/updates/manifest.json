@@ -1,0 +1,8 @@
+[
+  {
+    "id": "0001_block_bounce_count",
+    "file": "0001_block_bounce_count.sql",
+    "description": "Track policy and reputation blocks separately from hard and soft bounces",
+    "checkSql": "SELECT COUNT(*) AS present FROM pragma_table_info('subscribers') WHERE name = 'block_bounce_count'"
+  }
+]

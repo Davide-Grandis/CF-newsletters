@@ -1,4 +1,10 @@
-import { ADMIN_ASSETS, DATABASE_SCHEMA, WORKER_ARTIFACTS } from './generated/artifacts';
+import {
+  ADMIN_ASSETS,
+  DATABASE_MIGRATIONS,
+  DATABASE_SCHEMA,
+  PRODUCT_VERSION,
+  WORKER_ARTIFACTS,
+} from './generated/artifacts';
 
 type InstallRequest = {
   accountId: string;
@@ -16,18 +22,20 @@ type InstallRequest = {
 type Resource = { id?: string; name?: string; queue_id?: string; queue_name?: string; uuid?: string };
 type ApiResult<T> = { errors?: Array<{ message?: string }>; result?: T; success?: boolean };
 type Binding = Record<string, unknown>;
+type D1QueryResult = { results?: Array<Record<string, unknown>>; success?: boolean };
+type DatabaseState = { id: string; isNew: boolean; isInitialized: boolean; installedVersion: string | null };
 
 const API = 'https://api.cloudflare.com/client/v4';
 const workerNames = ['ingest', 'consumer', 'tracker', 'bounce', 'cleanup', 'admin'] as const;
 
 const page = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>cf-newsletter installer</title><style>
+<title>cf-newsletter installer and updater</title><style>
 :root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#172033;background:#f5f7fb}*{box-sizing:border-box}body{margin:0;padding:32px 16px}.shell{max-width:840px;margin:auto}.card{background:#fff;border:1px solid #dce2ec;border-radius:14px;padding:26px;box-shadow:0 8px 30px #1720330d;margin-bottom:18px}h1{margin:0 0 8px;font-size:30px}h2{font-size:19px;margin:0 0 14px}p,li{line-height:1.55;color:#4b5568}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.wide{grid-column:1/-1}label{display:block;font-size:13px;font-weight:650;color:#344054}input{width:100%;margin-top:6px;padding:11px 12px;border:1px solid #cbd3df;border-radius:8px;font:inherit}button{border:0;border-radius:8px;padding:12px 18px;background:#f48120;color:#fff;font-weight:700;font-size:15px;cursor:pointer}button:disabled{opacity:.55;cursor:wait}.note{font-size:13px}.progress{display:none}.row{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #eef1f5}.state{width:92px;font-weight:700;color:#667085}.ok{color:#16803c}.error{color:#b42318}code{background:#f1f4f8;padding:2px 5px;border-radius:4px}@media(max-width:650px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}}
-</style></head><body><main class="shell"><section class="card"><h1>Install cf-newsletter</h1><p>This setup Worker provisions and deploys the isolated newsletter services into your Cloudflare account. The installation token is used only for this request and is not stored.</p></section>
+</style></head><body><main class="shell"><section class="card"><h1>Install or update cf-newsletter</h1><p>This hosted installer deploys cf-newsletter ${PRODUCT_VERSION} into your Cloudflare account or updates an existing deployment in place. The installation token is used only for this request and is not stored.</p></section>
 <section class="card"><h2>Cloudflare account requirements</h2><ul><li>A Cloudflare zone using the selected domain.</li><li>Workers, D1, R2 and Queues enabled.</li><li>Zero Trust Access enabled; the installer can create its organization, email list, application and policy.</li><li>Email Routing entitlement. The installer enables it and creates Worker routes.</li><li>Email Sending entitlement. After installation, verify domain onboarding and DKIM in <strong>Compute → Email Service</strong>.</li></ul><p class="note">Installation token permissions: Account — Workers Scripts Write, D1 Write, Queues Write, Workers R2 Storage Write, Access Organizations/Identity Providers/Groups Write, Access Apps and Policies Write, Zero Trust Write, Email Read. Zone — Zone Read, Zone Settings Write, Workers Routes Write, Email Routing Rules Write, Analytics Read.</p></section>
-<form class="card" id="form"><h2>Deployment details</h2><div class="grid"><label>Cloudflare account ID<input name="accountId" required pattern="[a-fA-F0-9]{32}"></label><label>Cloudflare zone domain<input name="domain" required placeholder="example.com"></label><label>Cloudflare administrator email<input name="adminEmail" required type="email"></label><label>Default sender address<input name="fromAddress" required type="email" placeholder="newsletter@example.com"></label><label>Zero Trust team name<input name="teamName" required placeholder="my-newsletter"></label><label class="wide">Short-lived installation API token<input name="installToken" required type="password" autocomplete="off"></label><label class="wide">Routing/analytics runtime token <span class="note">(optional)</span><input name="routingToken" type="password" autocomplete="off"></label><label class="wide">Read-only runtime token <span class="note">(optional)</span><input name="readToken" type="password" autocomplete="off"></label><label class="wide">Zero Trust runtime token <span class="note">(optional)</span><input name="zeroTrustToken" type="password" autocomplete="off"></label><label class="wide">Turnstile secret <span class="note">(optional)</span><input name="turnstileSecret" type="password" autocomplete="off"></label><label class="wide note"><input required type="checkbox" style="width:auto;margin-right:8px">I understand that this deploy replaces existing <code>newsletter-*</code> Worker scripts and the zone catch-all Email Routing rule.</label><div class="wide"><button type="submit">Deploy to this Cloudflare account</button></div></div></form>
-<section class="card progress" id="progress"><h2>Installation progress</h2><div id="rows"></div></section></main><script>
+<form class="card" id="form"><h2>Deployment details</h2><div class="grid"><label>Cloudflare account ID<input name="accountId" required pattern="[a-fA-F0-9]{32}"></label><label>Cloudflare zone domain<input name="domain" required placeholder="example.com"></label><label>Cloudflare administrator email<input name="adminEmail" required type="email"></label><label>Default sender address<input name="fromAddress" required type="email" placeholder="newsletter@example.com"></label><label>Zero Trust team name<input name="teamName" required placeholder="my-newsletter"></label><label class="wide">Short-lived installation API token<input name="installToken" required type="password" autocomplete="off"></label><label class="wide">Routing/analytics runtime token <span class="note">(optional; blank preserves the current secret)</span><input name="routingToken" type="password" autocomplete="off"></label><label class="wide">Read-only runtime token <span class="note">(optional; blank preserves the current secret)</span><input name="readToken" type="password" autocomplete="off"></label><label class="wide">Zero Trust runtime token <span class="note">(optional; blank preserves the current secret)</span><input name="zeroTrustToken" type="password" autocomplete="off"></label><label class="wide">Turnstile secret <span class="note">(optional; blank preserves the current secret)</span><input name="turnstileSecret" type="password" autocomplete="off"></label><label class="wide note"><input required type="checkbox" style="width:auto;margin-right:8px">I understand that installation or update replaces existing <code>newsletter-*</code> Worker code and the zone catch-all Email Routing rule, while preserving application data and existing secrets.</label><div class="wide"><button type="submit">Install or update cf-newsletter</button></div></div></form>
+<section class="card progress" id="progress"><h2>Deployment progress</h2><div id="rows"></div></section></main><script>
 const form=document.querySelector('#form'),progress=document.querySelector('#progress'),rows=document.querySelector('#rows'),button=form.querySelector('button');
 form.addEventListener('submit',async event=>{event.preventDefault();button.disabled=true;progress.style.display='block';rows.innerHTML='';const data=Object.fromEntries(new FormData(form)),payload=JSON.stringify(data);form.querySelectorAll('input[type=password]').forEach(input=>input.value='');try{const response=await fetch('/api/install',{method:'POST',headers:{'content-type':'application/json'},body:payload});if(!response.ok||!response.body)throw new Error(await response.text());const reader=response.body.pipeThrough(new TextDecoderStream()).getReader();let buffer='';for(;;){const {value,done}=await reader.read();buffer+=value||'';const lines=buffer.split('\n');buffer=lines.pop()||'';for(const line of lines){if(!line)continue;const item=JSON.parse(line),row=document.createElement('div');row.className='row';row.innerHTML='<span class="state '+(item.state==='complete'?'ok':item.state==='error'?'error':'')+'"></span><span></span>';row.children[0].textContent=item.state;row.children[1].textContent=item.message;rows.append(row);row.scrollIntoView({behavior:'smooth',block:'nearest'});}if(done)break;}}catch(error){const row=document.createElement('div');row.className='row';row.innerHTML='<span class="state error">error</span><span></span>';row.children[1].textContent=error.message;rows.append(row);}finally{button.disabled=false;}});
 </script></body></html>`;
@@ -60,13 +68,61 @@ async function api<T>(token: string, path: string, init: RequestInit = {}, allow
   return payload.result ?? null;
 }
 
-async function ensureD1(input: InstallRequest): Promise<string> {
+async function d1Query(input: InstallRequest, databaseId: string, sql: string): Promise<Array<Record<string, unknown>>> {
+  const result = await api<D1QueryResult[]>(input.installToken, `/accounts/${input.accountId}/d1/database/${databaseId}/query`, {
+    method: 'POST',
+    body: JSON.stringify({ sql }),
+  });
+  return result?.flatMap((statement) => statement.results ?? []) ?? [];
+}
+
+async function ensureD1(input: InstallRequest): Promise<DatabaseState> {
   const databases = await api<Resource[]>(input.installToken, `/accounts/${input.accountId}/d1/database?name=newsletter_db`);
   let database = databases?.find((item) => item.name === 'newsletter_db');
+  const isNew = !database;
   if (!database) database = await api<Resource>(input.installToken, `/accounts/${input.accountId}/d1/database`, { method: 'POST', body: JSON.stringify({ name: 'newsletter_db', jurisdiction: 'eu' }) }) ?? undefined;
   const id = database?.uuid ?? database?.id;
   if (!id) throw new Error('Could not resolve newsletter_db ID');
-  return id;
+  const tables = isNew ? [] : await d1Query(input, id, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'settings'");
+  return { id, isNew, isInitialized: tables.length > 0, installedVersion: null };
+}
+
+function compareVersions(left: string, right: string): number {
+  const a = left.split('.').map((part) => Number(part));
+  const b = right.split('.').map((part) => Number(part));
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0);
+    if (difference) return difference;
+  }
+  return 0;
+}
+
+async function prepareDatabase(input: InstallRequest, state: DatabaseState, update: (state: string, message: string) => void): Promise<DatabaseState> {
+  if (!state.isInitialized) {
+    update('configuring', 'Creating the D1 schema');
+    await d1Query(input, state.id, DATABASE_SCHEMA);
+  } else {
+    await d1Query(input, state.id, "CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS deployment_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (datetime('now')))");
+  }
+  const metadata = await d1Query(input, state.id, "SELECT value FROM deployment_metadata WHERE key = 'product_version'");
+  const installedVersion = typeof metadata[0]?.value === 'string' ? metadata[0].value : null;
+  if (installedVersion && compareVersions(installedVersion, PRODUCT_VERSION) > 0) {
+    throw new Error(`Refusing to downgrade version ${installedVersion} to ${PRODUCT_VERSION}`);
+  }
+  const appliedRows = await d1Query(input, state.id, 'SELECT version FROM schema_migrations');
+  const applied = new Set(appliedRows.map((row) => String(row.version)));
+  for (const migration of DATABASE_MIGRATIONS) {
+    if (applied.has(migration.id)) continue;
+    update('migrating', `${migration.id}: ${migration.description}`);
+    const check = await d1Query(input, state.id, migration.checkSql);
+    if (Number(check[0]?.present ?? 0) === 0) await d1Query(input, state.id, migration.sql);
+    await d1Query(input, state.id, `INSERT INTO schema_migrations(version) VALUES(${sqlValue(migration.id)})`);
+  }
+  return { ...state, isInitialized: true, installedVersion };
+}
+
+async function recordProductVersion(input: InstallRequest, databaseId: string): Promise<void> {
+  await d1Query(input, databaseId, `INSERT INTO deployment_metadata(key,value) VALUES('product_version',${sqlValue(PRODUCT_VERSION)}) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=datetime('now')`);
 }
 
 async function ensureQueue(input: InstallRequest, name: string): Promise<Resource> {
@@ -104,12 +160,20 @@ async function ensureAccess(input: InstallRequest): Promise<string> {
 }
 
 function baseBindings(databaseId: string): Binding[] {
-  return [{ type: 'd1', name: 'DB', id: databaseId }];
+  return [
+    { type: 'd1', name: 'DB', id: databaseId },
+    { type: 'plain_text', name: 'APP_VERSION', text: PRODUCT_VERSION },
+  ];
 }
 
-function secrets(input: InstallRequest, name: typeof workerNames[number], linkKey: string, attachmentKey: string): Binding[] {
+async function secretNames(input: InstallRequest, name: typeof workerNames[number]): Promise<Set<string>> {
+  const existing = await api<Array<{ name?: string }>>(input.installToken, `/accounts/${input.accountId}/workers/scripts/newsletter-${name}/secrets`, {}, true);
+  return new Set((existing ?? []).map((secret) => secret.name).filter((value): value is string => Boolean(value)));
+}
+
+function secrets(input: InstallRequest, name: typeof workerNames[number], linkKey: string, attachmentKey: string, rotateSigningKeys: boolean): Binding[] {
   const values: Binding[] = [];
-  if (name === 'consumer' || name === 'tracker') values.push({ type: 'secret_text', name: 'LINK_SIGNING_KEY', text: linkKey }, { type: 'secret_text', name: 'ATTACHMENT_SIGNING_KEY', text: attachmentKey });
+  if (rotateSigningKeys && (name === 'consumer' || name === 'tracker')) values.push({ type: 'secret_text', name: 'LINK_SIGNING_KEY', text: linkKey }, { type: 'secret_text', name: 'ATTACHMENT_SIGNING_KEY', text: attachmentKey });
   if ((name === 'admin' || name === 'bounce') && input.routingToken) values.push({ type: 'secret_text', name: 'CF_API_TOKEN', text: input.routingToken });
   if ((name === 'admin' || name === 'consumer') && input.readToken) values.push({ type: 'secret_text', name: 'CF_READ_API_TOKEN', text: input.readToken });
   if (name === 'admin' && input.zeroTrustToken) values.push({ type: 'secret_text', name: 'CF_ZT_API_TOKEN', text: input.zeroTrustToken });
@@ -117,14 +181,13 @@ function secrets(input: InstallRequest, name: typeof workerNames[number], linkKe
   return values;
 }
 
-function bindingsFor(input: InstallRequest, name: typeof workerNames[number], databaseId: string, linkKey: string, attachmentKey: string): Binding[] {
+function bindingsFor(input: InstallRequest, name: typeof workerNames[number], databaseId: string, linkKey: string, attachmentKey: string, rotateSigningKeys: boolean): Binding[] {
   const bindings = baseBindings(databaseId);
-  if (name !== 'admin' && name !== 'bounce') bindings.push({ type: 'r2_bucket', name: 'ARCHIVE', bucket_name: 'newsletter-archive' });
-  if (name === 'bounce') bindings.push({ type: 'r2_bucket', name: 'ARCHIVE', bucket_name: 'newsletter-archive' });
+  if (name !== 'admin') bindings.push({ type: 'r2_bucket', name: 'ARCHIVE', bucket_name: 'newsletter-archive' });
   if (name === 'ingest' || name === 'consumer') bindings.push({ type: 'queue', name: 'QUEUE', queue_name: 'newsletter-queue' });
   if (name === 'consumer' || name === 'tracker' || name === 'admin') bindings.push({ type: 'send_email', name: 'SEND_EMAIL' });
   if (name === 'admin') bindings.push({ type: 'r2_bucket', name: 'ASSETS_R2', bucket_name: 'newsletter-admin', jurisdiction: 'eu' }, { type: 'r2_bucket', name: 'ARCHIVE', bucket_name: 'newsletter-archive' }, { type: 'assets', name: 'ASSETS' });
-  return [...bindings, ...secrets(input, name, linkKey, attachmentKey)];
+  return [...bindings, ...secrets(input, name, linkKey, attachmentKey, rotateSigningKeys)];
 }
 
 async function uploadAssets(input: InstallRequest): Promise<string> {
@@ -147,13 +210,15 @@ async function uploadAssets(input: InstallRequest): Promise<string> {
   return jwt;
 }
 
-async function uploadWorker(input: InstallRequest, name: typeof workerNames[number], databaseId: string, linkKey: string, attachmentKey: string, assetsJwt?: string): Promise<void> {
+async function uploadWorker(input: InstallRequest, name: typeof workerNames[number], databaseId: string, linkKey: string, attachmentKey: string, rotateSigningKeys: boolean, assetsJwt?: string): Promise<void> {
   const form = new FormData();
   const metadata: Record<string, unknown> = {
     main_module: 'main.js',
     compatibility_date: '2026-09-10',
     compatibility_flags: ['nodejs_compat'],
-    bindings: bindingsFor(input, name, databaseId, linkKey, attachmentKey),
+    bindings: bindingsFor(input, name, databaseId, linkKey, attachmentKey, rotateSigningKeys),
+    keep_bindings: ['secret_text'],
+    annotations: { 'workers/message': `cf-newsletter ${PRODUCT_VERSION}` },
     workers_dev: true,
   };
   if (name === 'admin' && assetsJwt) metadata.assets = { jwt: assetsJwt, config: { not_found_handling: 'single-page-application', run_worker_first: ['/api/*', '/media/*'] } };
@@ -190,41 +255,47 @@ function sqlValue(value: string): string {
 }
 
 async function runInstall(input: InstallRequest, update: (state: string, message: string) => void): Promise<void> {
-  update('checking', 'Validating API token and Cloudflare zone');
+  update('checking', `Validating access for cf-newsletter ${PRODUCT_VERSION}`);
   const verification = await api<{ status?: string }>(input.installToken, '/user/tokens/verify');
   if (verification?.status !== 'active') throw new Error('Installation token is not active');
   const zones = await api<Resource[]>(input.installToken, `/zones?name=${encodeURIComponent(input.domain)}&account.id=${input.accountId}`);
   const zoneId = zones?.[0]?.id;
   if (!zoneId) throw new Error(`Zone ${input.domain} was not found in this account`);
 
-  update('creating', 'D1 database, queues and R2 buckets');
-  const databaseId = await ensureD1(input);
+  const initialDatabase = await ensureD1(input);
+  const mode = initialDatabase.isInitialized ? 'update' : 'installation';
+  const database = await prepareDatabase(input, initialDatabase, update);
+  update('detected', mode === 'update' ? `Existing deployment ${database.installedVersion ?? '(legacy version)'}` : 'New deployment');
+  if (mode === 'update') update('updating', `${database.installedVersion ?? 'legacy deployment'} → ${PRODUCT_VERSION}`);
+
+  update('configuring', 'Queues and R2 buckets');
   const queue = await ensureQueue(input, 'newsletter-queue');
   await ensureQueue(input, 'newsletter-dlq');
   await ensureBucket(input, 'newsletter-archive');
   await ensureBucket(input, 'newsletter-admin', 'eu');
-
-  update('configuring', 'D1 schema');
-  await api(input.installToken, `/accounts/${input.accountId}/d1/database/${databaseId}/query`, { method: 'POST', body: JSON.stringify({ sql: DATABASE_SCHEMA }) });
 
   update('configuring', 'Zero Trust organization, administrator list and Access policy');
   const accessListId = await ensureAccess(input);
   const settings = { BASE_DOMAIN: input.domain, EMAIL_ROUTING_ZONE_ID: zoneId, ACCESS_ACCOUNT_ID: input.accountId, ACCESS_LIST_ID: accessListId, FROM_ADDRESS: input.fromAddress, TRACKING_BASE_URL: `https://track.${input.domain}`, INGEST_WORKER_NAME: 'newsletter-ingest' };
   const values = Object.entries(settings).map(([key, value]) => `(${sqlValue(key)},${sqlValue(value)})`).join(',');
   const seed = `INSERT INTO settings(key,value) VALUES ${values} ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=datetime('now'); INSERT INTO admins(email,role) VALUES(${sqlValue(input.adminEmail)},'super_admin') ON CONFLICT(email) DO UPDATE SET role='super_admin',updated_at=datetime('now');`;
-  await api(input.installToken, `/accounts/${input.accountId}/d1/database/${databaseId}/query`, { method: 'POST', body: JSON.stringify({ sql: seed }) });
+  await d1Query(input, database.id, seed);
 
-  update('uploading', 'Admin console static assets');
-  const assetsJwt = await uploadAssets(input);
+  const [consumerSecrets, trackerSecrets] = await Promise.all([secretNames(input, 'consumer'), secretNames(input, 'tracker')]);
+  const requiredSigningSecrets = ['LINK_SIGNING_KEY', 'ATTACHMENT_SIGNING_KEY'];
+  const rotateSigningKeys = requiredSigningSecrets.some((secret) => !consumerSecrets.has(secret) || !trackerSecrets.has(secret));
+  update(rotateSigningKeys ? 'creating' : 'preserving', rotateSigningKeys ? 'Shared signing keys' : 'Existing Worker secrets and signing keys');
   const keyBytes = new Uint8Array(48);
   crypto.getRandomValues(keyBytes);
   const linkKey = btoa(String.fromCharCode(...keyBytes));
   crypto.getRandomValues(keyBytes);
   const attachmentKey = btoa(String.fromCharCode(...keyBytes));
 
+  update('uploading', 'Admin console static assets');
+  const assetsJwt = await uploadAssets(input);
   for (const name of workerNames) {
-    update('deploying', `newsletter-${name}`);
-    await uploadWorker(input, name, databaseId, linkKey, attachmentKey, name === 'admin' ? assetsJwt : undefined);
+    update('deploying', `newsletter-${name} ${PRODUCT_VERSION}`);
+    await uploadWorker(input, name, database.id, linkKey, attachmentKey, rotateSigningKeys, name === 'admin' ? assetsJwt : undefined);
   }
 
   update('configuring', 'Queue consumer and cron triggers');
@@ -235,8 +306,9 @@ async function runInstall(input: InstallRequest, update: (state: string, message
   update('configuring', 'Custom domains and Email Routing rules');
   await configureDomains(input, zoneId);
   await configureRouting(input, zoneId);
+  await recordProductVersion(input, database.id);
 
-  update('complete', `Installation complete. Open https://console.${input.domain}. Verify Email Sending and DKIM, then delete the cf-newsletters-installer Worker.`);
+  update('complete', `${mode === 'update' ? 'Update' : 'Installation'} to ${PRODUCT_VERSION} complete. Open https://console.${input.domain}, verify Email Sending and DKIM, then revoke the short-lived installation token.`);
 }
 
 export default {

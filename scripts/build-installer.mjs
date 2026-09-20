@@ -7,6 +7,13 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const output = join(root, 'workers', 'installer', 'src', 'generated', 'artifacts.ts');
 const workerNames = ['ingest', 'consumer', 'tracker', 'bounce', 'cleanup', 'admin'];
+const packageInfo = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const migrationDirectory = join(root, 'db', 'updates');
+const migrationManifest = JSON.parse(readFileSync(join(migrationDirectory, 'manifest.json'), 'utf8'));
+const migrations = migrationManifest.map((migration) => ({
+  ...migration,
+  sql: readFileSync(join(migrationDirectory, migration.file), 'utf8'),
+}));
 const mimeTypes = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -66,6 +73,8 @@ const generated = [
   `export const WORKER_ARTIFACTS = ${JSON.stringify(artifacts)} as const;`,
   `export const ADMIN_ASSETS = ${JSON.stringify(assets)} as const;`,
   `export const DATABASE_SCHEMA = ${JSON.stringify(readFileSync(join(root, 'db', 'schema.sql'), 'utf8'))};`,
+  `export const PRODUCT_VERSION = ${JSON.stringify(packageInfo.version)};`,
+  `export const DATABASE_MIGRATIONS = ${JSON.stringify(migrations)} as const;`,
 ].join('\n\n');
 
 mkdirSync(resolve(output, '..'), { recursive: true });

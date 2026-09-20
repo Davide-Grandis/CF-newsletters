@@ -235,3 +235,14 @@ CREATE TABLE IF NOT EXISTS warmup_state (
   updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 INSERT OR IGNORE INTO warmup_state (id, day, day_started_at) VALUES (1, NULL, NULL);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version    TEXT PRIMARY KEY,
+  applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS deployment_metadata (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

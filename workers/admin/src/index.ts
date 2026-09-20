@@ -39,6 +39,7 @@ export interface Env {
   // these objects are only reachable by authenticated operators.
   ASSETS_R2: R2Bucket;
   ARCHIVE: R2Bucket;
+  APP_VERSION?: string;
   // Warmup settings — kept in sync with the consumer worker so the admin GUI
   // can show the weekly schedule and current progression.
   WARMUP_SCHEDULE?: string;
@@ -157,6 +158,7 @@ export default {
         // Whether the Cloudflare Access login settings (account + list IDs) are
         // configured. Used by the SPA to nudge a super_admin to finish setup.
         access_configured: Boolean(cfg.ACCESS_ACCOUNT_ID && cfg.ACCESS_LIST_ID),
+        app_version: env.APP_VERSION ?? null,
       });
     }
 

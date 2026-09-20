@@ -10,6 +10,7 @@ import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const productVersion = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
 const workers = ['ingest', 'consumer', 'tracker', 'bounce', 'cleanup', 'admin'];
 const dryRun = process.argv.includes('--dry-run');
 let muteOutput = false;
@@ -374,7 +375,7 @@ async function main() {
   const settingValues = Object.entries(settings)
     .map(([key, value]) => `(${escapeSql(key)}, ${escapeSql(value)})`)
     .join(', ');
-  const seedSql = `INSERT INTO settings (key, value) VALUES ${settingValues} ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now'); INSERT INTO admins (email, role) VALUES (${escapeSql(adminEmail)}, 'super_admin') ON CONFLICT(email) DO UPDATE SET role='super_admin', updated_at=datetime('now');`;
+  const seedSql = `INSERT INTO settings (key, value) VALUES ${settingValues} ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now'); INSERT INTO admins (email, role) VALUES (${escapeSql(adminEmail)}, 'super_admin') ON CONFLICT(email) DO UPDATE SET role='super_admin', updated_at=datetime('now'); INSERT INTO deployment_metadata (key, value) VALUES ('product_version', ${escapeSql(productVersion)}) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=datetime('now');`;
   step('Configuring cf-newsletter and its super admin');
   status('configuring', 'deployment settings');
   status('assigning', `${adminEmail} as super_admin`);
