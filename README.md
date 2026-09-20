@@ -36,7 +36,7 @@ for the installation request and is not stored by the installer.
 
 Open the hosted installer—no GitHub account or repository is required:
 
-**[Open the cf-newsletter installer](https://cf-newsletter-installer.davideslab.eu/)**
+[![Open the installer](https://img.shields.io/badge/Open_the_installer-F6821F?style=for-the-badge&logo=cloudflare&logoColor=white)](https://cf-newsletter-installer.davideslab.eu/)
 
 Enter the target account ID, domain and Cloudflare administrator email. The
 installer creates or reuses D1, both queues and both R2 buckets; applies the
