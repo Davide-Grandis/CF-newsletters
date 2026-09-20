@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "npm run build:installer",
-    "build:installer": "npm run build:web && node scripts/build-installer.mjs",
+    "build:installer": "npm ci --prefix web --progress=false && npm run build:web && node scripts/build-installer.mjs",
     "deploy": "npm run build:installer && wrangler deploy",
     "cf-typegen": "wrangler types worker-configuration.d.ts",
     "install:cloudflare": "node scripts/install.mjs",
