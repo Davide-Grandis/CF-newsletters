@@ -29,7 +29,7 @@ independently managed.
 
 ### Account requirements
 
-Before running the installer, the target Cloudflare account must have:
+Before running the browser-based installer, the target Cloudflare account must have:
 
 - a domain added as an active Cloudflare authoritative DNS zone (primary/full setup);
 - Workers, D1, R2 and Queues available;
@@ -37,7 +37,7 @@ Before running the installer, the target Cloudflare account must have:
 - Email Routing available for the zone;
 - Email Sending entitlement for the zone.
 
-The browser installer asks for a short-lived API token with these permissions:
+The installer asks for a short-lived API token with these permissions:
 
 - **Account:** Workers Scripts Write, D1 Write, Queues Write, Workers R2
   Storage Write, Access Organizations/Identity Providers/Groups Write, Access
@@ -47,11 +47,11 @@ The browser installer asks for a short-lived API token with these permissions:
 
 Restrict the token to the target account and zone, and revoke it after use.
 
-### Hosted installer
+Note: no GitHub account or repository is required.
 
-Open the hosted installer—no GitHub account or repository is required:
+### Installer
 
-[![Open the installer](https://img.shields.io/badge/Open_the_installer-F6821F?style=for-the-badge&logo=cloudflare&logoColor=white)](https://cf-newsletter-installer.davideslab.eu/)
+[![Run the installer](https://img.shields.io/badge/Open_the_installer-F6821F?style=for-the-badge&logo=cloudflare&logoColor=white)](https://cf-newsletter-installer.davideslab.eu/)
 
 Enter the target account ID, domain and Cloudflare administrator email, then
 follow the on-screen instructions.
