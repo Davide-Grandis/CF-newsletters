@@ -33,9 +33,8 @@ Before running the browser-based installer, the target Cloudflare account must h
 
 - a domain added as an active Cloudflare authoritative DNS zone (primary/full setup);
 - Workers, D1, R2 and Queues available;
-- Zero Trust Access available;
-- Email Routing available for the zone;
-- Email Sending entitlement for the zone.
+- Email Sending and Email Routing available for the zone;
+- Zero Trust Access available.
 
 The installer asks for a short-lived API token with these permissions:
 
