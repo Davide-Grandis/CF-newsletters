@@ -51,7 +51,7 @@ Note: no GitHub account or repository is required.
 
 ### Installer
 
-[![Run the installer](https://img.shields.io/badge/Open_the_installer-F6821F?style=for-the-badge&logo=cloudflare&logoColor=white)](https://cf-newsletter-installer.davideslab.eu/)
+<a href="https://cf-newsletter-installer.davideslab.eu/"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy cf-newsletter to Cloudflare"></a>
 
 Enter the target account ID, domain and Cloudflare administrator email, then
 follow the on-screen instructions.
