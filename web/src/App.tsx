@@ -124,17 +124,7 @@ function Layout() {
           >
             <HamburgerIcon />
           </button>
-          <span className="flex items-center gap-2 font-semibold text-[#0060BE]">
-            <a href="https://www.enea.it/en/" target="_blank" rel="noopener noreferrer">
-              <img
-                src="/media/logoenea1.png"
-                alt="ENEA"
-                className="h-8 w-auto"
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            </a>
+          <span className="font-semibold text-slate-900 dark:text-slate-100">
             Newsletter Admin Console
           </span>
           <div className="ml-auto flex items-center gap-3 text-sm">
@@ -217,14 +207,6 @@ function Footer() {
 function NoAccess({ email }: { email: string | null }) {
   return (
     <div className="h-screen flex flex-col items-center justify-center gap-4 p-6 text-center bg-slate-50 dark:bg-slate-950">
-      <img
-        src="/media/logoenea1.png"
-        alt="ENEA"
-        className="h-10 w-auto"
-        onError={(e) => {
-          (e.currentTarget as HTMLImageElement).style.display = 'none';
-        }}
-      />
       <div className="max-w-md space-y-2">
         <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-100">No console access</h1>
         <p className="text-sm text-slate-600 dark:text-slate-300">

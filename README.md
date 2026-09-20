@@ -160,20 +160,18 @@ the `Cf-Access-Authenticated-User-Email` header that the edge injects. The
 worker rejects any `/api/*` request that is missing that header. There is
 no shared bearer token.
 
-Static media (logos, header images) lives in the `newsletter-admin` R2
-bucket, bound as `ASSETS_R2` and served read-only under `/media/*` (e.g.
-`/media/logoenea1.png`, rendered in the header). The `/media/` prefix is
-used instead of `/assets/` to avoid colliding with the Vite-built SPA
-bundle. Because the whole worker sits behind Access, these objects are
-only reachable by authenticated operators. The bucket is EU-jurisdiction,
-so its binding in `workers/admin/wrangler.toml` declares
+Static media lives in the `newsletter-admin` R2 bucket, bound as `ASSETS_R2`
+and served read-only under `/media/*`. The `/media/` prefix avoids colliding
+with the Vite-built SPA bundle. Because the whole worker sits behind Access,
+these objects are only reachable by authenticated operators. The bucket is
+EU-jurisdiction, so its binding in `workers/admin/wrangler.toml` declares
 `jurisdiction = "eu"`. Upload a file with (note the **`--remote`** flag —
 wrangler v4's `r2 object` commands default to the *local* simulator and will
 silently not touch the production bucket without it):
 
 ```bash
-wrangler r2 object put newsletter-admin/logoenea1.png \
-  --jurisdiction eu --remote --file ./logoenea1.png --content-type image/png
+wrangler r2 object put newsletter-admin/header.png \
+  --jurisdiction eu --remote --file ./header.png --content-type image/png
 ```
 
 Pages:
