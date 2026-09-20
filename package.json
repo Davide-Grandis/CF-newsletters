@@ -5,10 +5,8 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "npm run build:installer",
-    "build:installer": "npm ci --prefix web --progress=false && npm run build:web && node scripts/build-installer.mjs",
-    "deploy": "npm run build:installer && WRANGLER_CI_OVERRIDE_NAME=cf-newsletters-installer wrangler deploy --name cf-newsletters-installer",
-    "cf-typegen": "wrangler types worker-configuration.d.ts",
+    "build": "npm ci --prefix web --progress=false && npm run build:web",
+    "deploy": "npm run deploy:all",
     "install:cloudflare": "node scripts/install.mjs",
     "install:cloudflare:dry-run": "node scripts/install.mjs --dry-run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -18,7 +16,7 @@
     "db:apply": "wrangler d1 execute newsletter_db --file=db/schema.sql"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2",
+    "@cloudflare/workers-types": "^5.20260910.1",
     "typescript": "^5.5.4",
     "wrangler": "^4.131.0"
   },

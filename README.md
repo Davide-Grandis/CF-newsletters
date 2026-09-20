@@ -200,9 +200,12 @@ policy; configures Email Routing; and assigns the supplied administrator as the
 initial cf-newsletter `super_admin`. Live progress shows each component being
 created or configured.
 
-The hosted Worker receives the short-lived token only in the active HTTPS
-installation request. It does not persist the token in D1, R2, Worker variables
-or its own account. Revoke the token after the operation finishes.
+The hosted deployment service is maintained separately from this public product
+repository. It receives the short-lived token only in the active HTTPS
+installation request and does not persist it in D1, R2, Worker variables or its
+own account. Revoke the token after the operation finishes. The public terminal
+installer and manual deployment procedure remain available below for operators
+who prefer to run the deployment themselves.
 
 After a new installation, open **Compute → Email Service → Email Sending**,
 onboard the selected domain if necessary, and wait for DNS/DKIM to become

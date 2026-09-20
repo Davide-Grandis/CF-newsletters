@@ -6,7 +6,6 @@ node_modules/
 
 # generated SPA bundle (built from /web)
 workers/admin/public/
-workers/installer/src/generated/
 
 # vite build cache
 web/dist/
