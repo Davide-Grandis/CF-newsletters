@@ -187,17 +187,26 @@ for the installation request and is not stored by the setup Worker.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/Davide-Grandis/CF-newsletters)
 
-Cloudflare first deploys the lightweight `cf-newsletters-installer` Worker. Open
-its generated URL and enter the account ID, domain and Cloudflare administrator
-email. The installer then creates or reuses D1, both queues and both R2 buckets;
-applies and initializes the schema; deploys all six isolated production
-Workers; configures the queue consumer and cron triggers; creates the custom
-domains; creates the Zero Trust organization, administrator email list, Access
+On Cloudflare's **Set up your application** page, use
+`cf-newsletters-installer` for both the new Git repository name and the
+Worker/Application name when those are presented as separate fields. Workers
+Builds controls the Worker name and may override `wrangler.jsonc` with the
+application name selected on that page. If no separate Worker-name field is
+shown and Cloudflare uses `cf-newsletters`, installation still works: this is
+only the temporary setup Worker, not one of the production Workers.
+
+Cloudflare first deploys that lightweight setup Worker. Open its generated URL
+and enter the account ID, domain and Cloudflare administrator email. The
+installer then creates or reuses D1, both queues and both R2 buckets; applies
+and initializes the schema; deploys all six isolated production Workers;
+configures the queue consumer and cron triggers; creates the custom domains;
+creates the Zero Trust organization, administrator email list, Access
 application and allow policy; configures Email Routing; and assigns the supplied
 administrator as the initial cf-newsletter `super_admin`. Live progress shows
 each component being created or configured.
 
-After completion, delete the temporary `cf-newsletters-installer` Worker, then
+After completion, delete the temporary setup Worker (whether Cloudflare named it
+`cf-newsletters-installer` or `cf-newsletters`), then
 open **Compute → Email Service → Email Sending**, onboard the selected domain if
 necessary, and wait for DNS/DKIM to become active. This final check is not
 automated because the current Email Sending onboarding API requires a legacy
