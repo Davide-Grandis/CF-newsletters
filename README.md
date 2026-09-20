@@ -189,7 +189,7 @@ for the installation request and is not stored by the setup Worker.
 
 Open the hosted installer—no GitHub account or repository is required:
 
-**[Open the cf-newsletter installer](https://cf-newsletters-installer.dav-web-app.workers.dev)**
+**[Open the cf-newsletter installer](https://cf-newsletter-installer.davideslab.eu/)**
 
 Enter the target account ID, domain and Cloudflare administrator email. The
 installer creates or reuses D1, both queues and both R2 buckets; applies the
