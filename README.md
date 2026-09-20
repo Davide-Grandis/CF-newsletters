@@ -9,33 +9,91 @@ links) and sends it through the `SEND_EMAIL` Email Sending (beta) binding.
 Bounces, opens, clicks, downloads and unsubscribes are logged to D1, with
 raw archives in R2.
 
+## Install on Cloudflare
+
+### Account requirements
+
+Before running the installer, the target Cloudflare account must have:
+
+- a domain added as an active Cloudflare authoritative DNS zone (primary/full setup);
+- Workers, D1, R2 and Queues available;
+- Zero Trust Access available;
+- Email Routing available for the zone;
+- Email Sending entitlement for the zone.
+
+The browser installer asks for a short-lived API token with these permissions:
+
+- **Account:** Workers Scripts Write, D1 Write, Queues Write, Workers R2
+  Storage Write, Access Organizations/Identity Providers/Groups Write, Access
+  Apps and Policies Write, Zero Trust Write and Email Read;
+- **Zone:** Zone Read, Zone Settings Write, Workers Routes Write, Email Routing
+  Rules Write and Analytics Read.
+
+The token should be restricted to the target account and zone. It is held only
+for the installation request and is not stored by the installer.
+
+### Hosted installer
+
+Open the hosted installer—no GitHub account or repository is required:
+
+**[Open the cf-newsletter installer](https://cf-newsletter-installer.davideslab.eu/)**
+
+Enter the target account ID, domain and Cloudflare administrator email. The
+installer creates or reuses D1, both queues and both R2 buckets; applies the
+schema and ordered migrations; deploys all six isolated production Workers;
+configures the queue consumer, cron triggers and custom domains; creates the
+Zero Trust organization, administrator email list, Access application and allow
+policy; configures Email Routing; and assigns the supplied administrator as the
+initial cf-newsletter `super_admin`. Live progress shows each component being
+created or configured.
+
+The hosted deployment service is maintained separately from this public product
+repository. It receives the short-lived token only in the active HTTPS
+installation request and does not persist it in D1, R2, Worker variables or its
+own account. Revoke the token after the operation finishes.
+
+After a new installation, open **Compute → Email Service → Email Sending**,
+onboard the selected domain if necessary, and wait for DNS/DKIM to become
+active. This check is not automated because the current Email Sending onboarding
+API requires a legacy global API key, which the installer intentionally does not
+request.
+
+### Updates
+
+Open the same hosted installer whenever a newer release is published. It detects
+an existing `newsletter_db`, reads its installed product version, applies only
+pending migrations, updates the six Worker bundles and admin assets in place,
+and records the new version after every deployment step succeeds. Existing D1
+records, R2 objects, queues, custom domains, Access configuration and Worker
+secrets are preserved. Optional runtime-token fields can be left blank to keep
+the currently stored secrets. Downgrades are refused.
+
+Updates are explicit rather than automatic: review the release, create a new
+short-lived token, run the hosted updater, verify the console, then revoke the
+token.
+
 ## Table of Contents
 
+- [Install on Cloudflare](#install-on-cloudflare)
+  - [Account requirements](#account-requirements)
+  - [Hosted installer](#hosted-installer)
+  - [Updates](#updates)
 - [Features](#features)
 - [Components](#components)
 - [Layout](#layout)
 - [Admin GUI](#admin-gui)
-- [Prerequisites](#prerequisites)
-- [Provisioning](#provisioning)
-  - [Worker configuration (wrangler.toml)](#worker-configuration-wranglertoml)
-- [Deploy](#deploy)
-  - [Admin worker deploy script](#admin-worker-deploy-script)
-- [Initialization](#initialization)
-- [Configuration knobs](#configuration-knobs)
+- [Runtime configuration](#runtime-configuration)
 - [Notes](#notes)
 - [Consolidated Design Plan](#consolidated-design-plan)
   - [1. Architecture Overview](#1-architecture-overview)
-  - [2. Cloudflare Account Setup](#2-cloudflare-account-setup)
-  - [3. D1 Schema](#3-d1-schema--newsletter_db)
-  - [4. Queue](#4-queue--newsletter-queue)
-  - [5. R2](#5-r2--newsletter-archive)
-  - [6. Workers](#6-workers)
-  - [7. Repo Layout](#7-repo-layout)
-  - [8. Configuration](#8-configuration-settings--secrets)
-  - [9. Key Flows](#9-key-flows)
-  - [9b. Warmup Schedule](#9b-warmup-schedule)
-  - [10. Operational Concerns](#10-operational-concerns)
-  - [11. Implementation Milestones](#11-implementation-milestones)
+  - [2. D1 Schema](#2-d1-schema--newsletter_db)
+  - [3. Queue](#3-queue--newsletter-queue)
+  - [4. R2](#4-r2--newsletter-archive)
+  - [5. Workers](#5-workers)
+  - [6. Repo Layout](#6-repo-layout)
+  - [7. Runtime Configuration](#7-runtime-configuration)
+  - [8. Key Flows](#8-key-flows)
+  - [9. Warmup Schedule](#9-warmup-schedule)
 - [Further Reading](#further-reading)
 
 ## Features
@@ -89,16 +147,16 @@ shared/{mime,attachments,tracking,db,settings,footer,quota,warmup,types}.ts
 web/                       # Vite + React admin SPA
 db/{schema.sql,reset.sql,migrations/}
 docs/                      # workers, warmup, attachments, tracking,
-                           # retention, subscribe-unsubscribe, help, deploy
+                           # retention, subscribe-unsubscribe, help
 ```
 
 ## Admin GUI
 
 The `admin` worker exposes a JSON API under `/api/*` and serves a Vite +
 React SPA from the same origin via the `[assets]` binding. Authentication
-is delegated entirely to **Cloudflare Access**: deploy the worker behind
-an Access application and the SPA picks up the user's identity from the
-`Cf-Access-Authenticated-User-Email` header that the edge injects. The
+is delegated entirely to **Cloudflare Access**, which the hosted installer
+configures in front of the worker. The SPA picks up the user's identity from
+the `Cf-Access-Authenticated-User-Email` header that the edge injects. The
 worker rejects any `/api/*` request that is missing that header. There is
 no shared bearer token.
 
@@ -151,261 +209,20 @@ table and follows them across devices; new operators are seeded with their OS
 colour-scheme preference on first login (`GET /api/me` returns it,
 `PUT /api/preferences` updates it).
 
-Build the SPA before deploying the admin worker:
+For local UI development, run `cd web && npm run dev` (Vite proxies `/api/*`
+to `localhost:8787`, so run `wrangler dev` in `workers/admin/` in parallel).
 
-```bash
-cd web && npm install            # one-time
-cd ..
-npm run deploy:admin             # builds web/ then wrangler deploy
-```
+## Runtime configuration
 
-During development, run `cd web && npm run dev` (Vite proxies `/api/*` to
-`localhost:8787`, so run `wrangler dev` in `workers/admin/` in parallel).
+The hosted installer seeds deployment-specific values, generates signing keys
+and stores any optional automation tokens supplied during installation. Adjust
+operational settings later from the console's **Settings** page; saved values
+are stored in D1 and override the defaults in
+[`shared/settings.ts`](shared/settings.ts).
 
-## Install on Cloudflare
-
-### Account requirements
-
-Before deploying, the target Cloudflare account must have:
-
-- a domain added as an active Cloudflare zone;
-- Workers, D1, R2 and Queues available;
-- Zero Trust Access available;
-- Email Routing available for the zone;
-- Email Sending entitlement for the zone.
-
-The browser installer asks for a short-lived API token with these permissions:
-
-- **Account:** Workers Scripts Write, D1 Write, Queues Write, Workers R2
-  Storage Write, Access Organizations/Identity Providers/Groups Write, Access
-  Apps and Policies Write, Zero Trust Write and Email Read;
-- **Zone:** Zone Read, Zone Settings Write, Workers Routes Write, Email Routing
-  Rules Write and Analytics Read.
-
-The token should be restricted to the target account and zone. It is held only
-for the installation request and is not stored by the setup Worker.
-
-### Hosted installer
-
-Open the hosted installer—no GitHub account or repository is required:
-
-**[Open the cf-newsletter installer](https://cf-newsletter-installer.davideslab.eu/)**
-
-Enter the target account ID, domain and Cloudflare administrator email. The
-installer creates or reuses D1, both queues and both R2 buckets; applies the
-schema and ordered migrations; deploys all six isolated production Workers;
-configures the queue consumer, cron triggers and custom domains; creates the
-Zero Trust organization, administrator email list, Access application and allow
-policy; configures Email Routing; and assigns the supplied administrator as the
-initial cf-newsletter `super_admin`. Live progress shows each component being
-created or configured.
-
-The hosted deployment service is maintained separately from this public product
-repository. It receives the short-lived token only in the active HTTPS
-installation request and does not persist it in D1, R2, Worker variables or its
-own account. Revoke the token after the operation finishes. The public terminal
-installer and manual deployment procedure remain available below for operators
-who prefer to run the deployment themselves.
-
-After a new installation, open **Compute → Email Service → Email Sending**,
-onboard the selected domain if necessary, and wait for DNS/DKIM to become
-active. This check is not automated because the current Email Sending onboarding
-API requires a legacy global API key, which the installer intentionally does not
-request.
-
-### Updates
-
-Open the same hosted installer whenever a newer release is published. It detects
-an existing `newsletter_db`, reads its installed product version, applies only
-pending migrations, updates the six Worker bundles and admin assets in place,
-and records the new version after every deployment step succeeds. Existing D1
-records, R2 objects, queues, custom domains, Access configuration and Worker
-secrets are preserved. Optional runtime-token fields can be left blank to keep
-the currently stored secrets. Downgrades are refused.
-
-Updates are explicit rather than automatic: review the release, create a new
-short-lived token, run the hosted updater, verify the console, then revoke the
-token.
-
-For terminal-based installation or troubleshooting, run `npm install` followed
-by `npm run install:cloudflare`. Use `npm run install:cloudflare:dry-run` to
-inspect that fallback flow without changing Cloudflare resources. The detailed
-manual procedure below is retained for custom deployments.
-
-## Prerequisites (manual installation)
-
-- Cloudflare zone with Email Routing enabled (MX/SPF set up).
-- Email Sending enabled on the zone with DNS/DKIM active.
-- `wrangler` 4.x and Node 20+.
-- Once deployed, the **default settings** must be configured to match your zone
-  (sending identity, domains, Email Routing) before the first send — see
-  [*Initialization*](#initialization).
-
-## Provisioning (manual installation)
-
-```bash
-# D1
-wrangler d1 create newsletter_db
-wrangler d1 execute newsletter_db --file=db/schema.sql
-
-# Queues
-wrangler queues create newsletter-queue
-wrangler queues create newsletter-dlq
-
-# R2
-wrangler r2 bucket create newsletter-archive
-# GUI media (logos, header images) served by the admin worker.
-# Created in the EU jurisdiction, so all access must pass --jurisdiction eu.
-wrangler r2 bucket create newsletter-admin --jurisdiction eu
-```
-
-### Worker configuration (`wrangler.toml`)
-
-The real `workers/*/wrangler.toml` files are **not** committed — they hold
-deployment-specific IDs and your custom hostnames. Each worker ships a
-`wrangler.toml.example` template instead. Copy each one and fill in your values:
-
-```bash
-for w in ingest consumer tracker bounce cleanup admin; do
-  cp "workers/$w/wrangler.toml.example" "workers/$w/wrangler.toml"
-done
-```
-
-Then, in every copied file:
-
-- Replace `REPLACE_WITH_D1_ID` with the `database_id` returned by
-  `wrangler d1 create newsletter_db` (the same id goes in all six files).
-- In `workers/admin/wrangler.toml` and `workers/tracker/wrangler.toml`, replace
-  the `routes` hostnames (`console.yourdomain.com`, `track.yourdomain.com`) with
-  your own custom domains. The `custom_domain = true` route creates the DNS
-  record on first deploy — do **not** pre-create it manually.
-
-What each worker's `wrangler.toml` declares:
-
-| Worker | Bindings & config |
-| ------ | ----------------- |
-| **ingest** | `nodejs_compat`; `DB` (D1); `ARCHIVE` (R2 `newsletter-archive`); `QUEUE` producer (`newsletter-queue`). Receives the newsletter inbound address via an Email Routing rule. |
-| **consumer** | `nodejs_compat`; `DB`; `ARCHIVE`; `SEND_EMAIL`; `QUEUE` producer (re-enqueue overflow); queue **consumer** on `newsletter-queue` (`max_batch_size`/`max_concurrency`/`max_retries`, DLQ `newsletter-dlq`). Optional secret `CF_READ_API_TOKEN`; signing-key secrets must match the tracker. |
-| **tracker** | `DB`; `ARCHIVE`; `SEND_EMAIL`; custom-domain `routes` (`track.*`). Secrets `LINK_SIGNING_KEY`, `ATTACHMENT_SIGNING_KEY` (match the consumer) and optional `TURNSTILE_SECRET_KEY`. |
-| **bounce** | `nodejs_compat`; `DB`. Receives one-click unsubscribes via a catch-all Email Routing rule; cron syncs delivery failures via the Cloudflare GraphQL API. |
-| **cleanup** | `DB`; `ARCHIVE`; `[triggers] crons` (daily at 04:00 UTC). |
-| **admin** | `DB`; `SEND_EMAIL`; `ASSETS_R2` (R2 `newsletter-admin`, `jurisdiction = "eu"`); `[assets]` SPA from `./public` (SPA fallback); custom-domain `routes` (`console.*`). No auth secret — sits behind Cloudflare Access. Optional secrets `CF_API_TOKEN`, `CF_READ_API_TOKEN`, `CF_ZT_API_TOKEN`. |
-
-All tunable `[vars]` were removed from these files — runtime configuration lives
-in the D1 `settings` table (see [*Initialization*](#initialization)). Only
-bindings, routes, queue/cron config and the database id live in `wrangler.toml`.
-
-With the files in place:
-
-```bash
-# Email Routing rules
-#   newsletter@yourdomain.com    -> Worker `ingest`
-#   catch-all                    -> Worker `bounce`  (unsubscribes + cron bounce sync)
-
-# Secrets
-wrangler secret put LINK_SIGNING_KEY        --name tracker
-wrangler secret put ATTACHMENT_SIGNING_KEY  --name tracker
-# Admin worker: protect it with Cloudflare Access (no auth secret of its own).
-# Optional — lets it auto-manage Email Routing rules for newsletter inbound
-# addresses (token needs Zone → Email Routing Rules → Edit):
-(cd workers/admin && wrangler secret put CF_API_TOKEN)
-# Optional — lets it auto-resolve the Email Routing zone ID from the sending
-# domain when you save it on the Settings page (token needs Zone → Read):
-(cd workers/admin && wrangler secret put CF_READ_API_TOKEN)
-```
-
-The admin worker uses three optional Cloudflare API tokens, all stored as
-encrypted Wrangler **secrets** on the `newsletter-admin` worker (visible in the
-dashboard under **Settings → Variables and Secrets**, not under *Bindings*):
-
-| Secret | Permission | Purpose |
-| ------ | ---------- | ------- |
-| `CF_API_TOKEN` | Zone → Email Routing Rules → Edit | Create/move/delete the Email Routing rule for each newsletter's inbound address. |
-| `CF_READ_API_TOKEN` | Read all resources (account-scoped) | Look up the Email Routing zone ID from `BASE_DOMAIN` when the sending domain is saved, and read each domain's Email Routing status for the Settings pick-list. (Zone → Read alone resolves the zone ID but cannot read Email Routing status.) |
-| `CF_ZT_API_TOKEN` | Account → Zero Trust → Edit | Keep the Cloudflare Access "Emails" list in sync as console users are added/removed. |
-
-All three are best-effort: if a token is unset (or lacks scope) the related
-action still succeeds and the console surfaces a warning instead of failing.
-
-## Deploy
-
-```bash
-npm install
-for w in ingest consumer tracker bounce cleanup admin; do
-  (cd workers/$w && wrangler deploy)
-done
-```
-
-### Admin worker deploy script
-
-`scripts/deploy-admin.sh` is a convenience wrapper that builds the SPA,
-deploys only the admin worker, then commits any pending changes and pushes to GitHub.
-
-```bash
-./scripts/deploy-admin.sh "optional commit message"
-```
-
-If no commit message is given a timestamped default is used; a clean tree
-skips the commit. The deploy runs before the push, so a failed deploy
-aborts the script before anything is pushed.
-
-## Initialization
-
-Before the first send you must configure the deployment-specific **settings**.
-These used to be per-worker `wrangler.toml` vars; they now resolve from the D1
-`settings` table, falling back to the built-in defaults in
-[`shared/settings.ts`](shared/settings.ts) (`SETTINGS_DEFAULTS`). Secrets and
-bindings (signing keys, API tokens, D1/R2/queue) still live in Wrangler.
-
-There are two ways to set a value:
-
-1. **Edit the defaults** in `shared/settings.ts` and redeploy — best for values
-   that should be baked into the deployment and committed to git.
-2. **Override at runtime** from the console's **Settings** page (writes to the D1
-   `settings` table; no redeploy). A saved value overrides the built-in default;
-   **Reset** reverts to it.
-
-At minimum, set the **sending identity and domains** so they line up with the
-Email Routing / Email Sending setup from [*Prerequisites*](#prerequisites):
-
-| Setting | Purpose |
-| ------- | ------- |
-| `FROM_ADDRESS` | Default `From:` header for outbound mail (a newsletter may override its own sender). |
-| `BASE_DOMAIN` | Sending domain — the Cloudflare zone newsletters send from and receive inbound mail on. Saving it auto-resolves `EMAIL_ROUTING_ZONE_ID`. |
-| `TRACKING_BASE_URL` | Base URL of the tracker worker (opens, clicks, unsubscribe, downloads). |
-| `INGEST_WORKER_NAME` | Worker script the auto-managed Email Routing rules target. |
-| `DEFAULT_FOOTER_HTML` / `DEFAULT_FOOTER_TEXT` | Global default email footer appended to every message, unless a newsletter sets its own footer. Supports `{{unsubscribe_url}}`, `{{newsletter_name}}`, `{{email}}` tokens; an unsubscribe link is always added. HTML is sanitized to an allow-list on save. |
-
-`BASE_DOMAIN` and `EMAIL_ROUTING_ZONE_ID` have **no built-in defaults** — they
-live only in the D1 `settings` table and must be set per deployment. The other
-values above ship with defaults you can change.
-
-**Why `EMAIL_ROUTING_ZONE_ID` (and how it's set)?** When a newsletter is
-created, renamed or deleted, the admin worker automatically creates/moves/deletes
-the matching Email Routing rule (newsletter inbound address → ingest worker).
-Cloudflare's Email Routing API is scoped per zone, so this automation needs the
-zone ID to know which zone's routing table to edit — together with the
-`CF_API_TOKEN` secret (Zone → Email Routing Rules → Edit) for permission and
-`INGEST_WORKER_NAME` as the rule's target.
-
-You no longer enter the zone ID by hand. It is **derived from `BASE_DOMAIN`**:
-when you save the sending domain on the Settings page, the worker calls the
-Cloudflare API (`GET /zones?name=<domain>`) using the `CF_READ_API_TOKEN` secret
-(Zone → Read) and stores the resolved id in D1 — so the field is hidden from the
-UI. If `CF_READ_API_TOKEN` is unset, the domain isn't a zone in the account, or
-the token lacks scope, the domain still saves and the console shows a warning;
-you can then add the routing rules manually in the Cloudflare dashboard. Routing
-automation is **not** needed for sending.
-
-## Configuration knobs
-
-The remaining tunables (batch size, attachment limits,
-`ATTACHMENT_LINK_THRESHOLD_BYTES`, `MAX_RAW_BYTES`, warmup, retention, bounce
-thresholds) follow the same model: D1 `settings` row → built-in default in
-`shared/settings.ts`. Edit them there or in the console's **Settings** page (see
-[*Initialization*](#initialization)). Queue `max_concurrency` is still set in
-`workers/consumer/wrangler.toml`. Defaults are conservative; tune them to your
-Email Sending quota.
+Available settings include sending identity and footers, tracking and signup,
+batch and attachment limits, warmup, retention and bounce thresholds. Defaults
+are conservative; tune them to your sending quota and requirements.
 
 ## Notes
 
@@ -415,6 +232,7 @@ Email Sending quota.
 - If total raw size exceeds `ATTACHMENT_LINK_THRESHOLD_BYTES`, the
   ingest worker switches to **link mode** and rewrites the HTML to use
   signed download URLs served by the tracker worker.
+
 ---
 
 # Consolidated Design Plan
@@ -453,17 +271,7 @@ Author ──▶ Email Routing ──▶ Ingest Worker (Email handler)
                        Cron ─────▶ Cleanup Worker (R2 + D1 retention)
 ```
 
-## 2. Cloudflare Account Setup
-- **Zone** added; Email Routing enabled (MX/SPF).
-- **Email Sending (beta)** enabled; DKIM published; `SEND_EMAIL` binding allow-listed for `newsletter@yourdomain.com`.
-- **Routes**:
-  - `newsletter@yourdomain.com` → Ingest Worker
-  - catch-all → Bounce Worker (one-click email unsubscribes)
-- **D1**: `newsletter_db`
-- **Queues**: `newsletter-queue` (+ DLQ `newsletter-dlq`)
-- **R2**: `newsletter-archive` (raw inbound + attachments + raw event logs)
-
-## 3. D1 Schema — `newsletter_db`
+## 2. D1 Schema — `newsletter_db`
 
 The system is **multi-tenant**: a `newsletters` row is the parent of its own
 authors, subscribers and campaigns (all scoped by `newsletter_id`).
@@ -483,16 +291,16 @@ authors, subscribers and campaigns (all scoped by `newsletter_id`).
 - Indexes: `subscribers(status)`, `subscribers(newsletter_id)`, `campaigns(newsletter_id)`, `sends(campaign_id, status)`, `events(campaign_id, type)`, `attachments(campaign_id)`, `logs(ts)`, `logs(campaign_id)`.
 - Cascades: deleting a newsletter removes its authors/subscribers/campaigns; deleting a campaign removes its attachments/sends/events (`ON DELETE CASCADE`).
 
-## 4. Queue — `newsletter-queue`
+## 3. Queue — `newsletter-queue`
 - Message: `{ campaignId, batch: [{subscriberId, email, name, token}] }` — recipients only; attachments referenced by `campaignId` (avoids 128 KB message limit).
 - Consumer: `max_batch_size: 10`, `max_concurrency: 5`, `max_retries: 3`, DLQ → `newsletter-dlq`.
 
-## 5. R2 — `newsletter-archive`
+## 4. R2 — `newsletter-archive`
 - `campaigns/<id>/raw.eml` — original inbound MIME.
 - `campaigns/<id>/attachments/<sha256>` — deduped attachment bytes (metadata: filename, contentType, size, contentId).
 - `events/<yyyy-mm-dd>.ndjson` — long-term raw event log.
 
-## 6. Workers
+## 5. Workers
 
 ### a) `ingest-worker` (Email Worker)
 - `email(message, env, ctx)` handler.
@@ -551,7 +359,7 @@ authors, subscribers and campaigns (all scoped by `newsletter_id`).
   identity (`/api/me`) and the operator's theme preference
   (`PUT /api/preferences`).
 
-## 7. Repo Layout
+## 6. Repo Layout
 
 ```
 newsletter/
@@ -580,15 +388,14 @@ newsletter/
     └── reset.sql
 ```
 
-(`workers/*/wrangler.toml` and `db/migrations/` are git-ignored — copy each
-`wrangler.toml.example` to `wrangler.toml` and fill in your IDs; `schema.sql` is
-the authoritative database schema.)
+## 7. Runtime Configuration
 
-## 8. Configuration (settings / secrets)
-- Settings (resolved from the D1 `settings` table → built-in defaults in `shared/settings.ts`, editable on the console's **Settings** page; see [*Initialization*](#initialization)): `EMAIL_ROUTING_ZONE_ID`, `INGEST_WORKER_NAME`, `BASE_DOMAIN`, `ACCESS_ACCOUNT_ID`, `ACCESS_LIST_ID`, `ALLOW_ADMIN_NEWSLETTER_CRUD`, `FROM_ADDRESS`, `TRACKING_BASE_URL`, `DEFAULT_FOOTER_HTML`, `DEFAULT_FOOTER_TEXT`, `TRACKING_ENABLED`, `TURNSTILE_SITE_KEY`, `BATCH_SIZE`, `MAX_ATTACHMENT_BYTES`, `MAX_TOTAL_ATTACHMENT_BYTES`, `MAX_ATTACHMENT_COUNT`, `ALLOWED_MIME`, `BLOCKED_EXTENSIONS`, `ATTACHMENT_LINK_THRESHOLD_BYTES`, `MAX_RAW_BYTES`, `RETENTION_DAYS`, `HARD_BOUNCE_THRESHOLD`, `SOFT_BOUNCE_THRESHOLD`, and the `WARMUP_*` keys (`WARMUP_TARGET_WEEKLY`, `WARMUP_SCHEDULE`, `WARMUP_FALLBACK_DAILY_CAP`).
-- Secrets (`wrangler secret put`): `LINK_SIGNING_KEY`, `ATTACHMENT_SIGNING_KEY`. The admin worker has no auth secret — front it with a Cloudflare Access application; it optionally takes three Cloudflare API tokens: `CF_API_TOKEN` (Zone → Email Routing Rules → Edit) to auto-manage Email Routing rules, `CF_READ_API_TOKEN` (Zone → Read, plus Account → Email → Read to also show the daily quota) to auto-resolve the Email Routing zone ID from the sending domain, and `CF_ZT_API_TOKEN` (Account → Zero Trust → Edit) to sync the Cloudflare Access "Emails" list. The **consumer** worker also takes `CF_READ_API_TOKEN` (Account → Email → Read) to read the daily sending quota for warmup.
+Runtime settings resolve from the D1 `settings` table to built-in defaults in
+`shared/settings.ts` and are editable from the console's **Settings** page. They
+cover sending identity, footers, tracking, signup, attachment limits, warmup,
+retention and bounce handling.
 
-## 9. Key Flows
+## 8. Key Flows
 
 **Send**: Author email → Ingest verifies/parses, stores attachments in R2, writes D1 → batches enqueued → Consumer loads attachments once, builds MIME per recipient, sends via `SEND_EMAIL` → `sends` updated.
 
@@ -604,7 +411,7 @@ mail is sent.
 
 **Retention**: Cleanup Worker (cron) prunes R2 + D1 per `RETENTION_DAYS`.
 
-## 9b. Warmup Schedule
+## 9. Warmup Schedule
 
 To preserve sending reputation, the consumer worker throttles sending against
 two caps (the smaller binds). Warmup is **always on** and **demand-driven** —
@@ -650,33 +457,13 @@ defaults in `shared/settings.ts`; edit on the console's **Settings** page):
 | `WARMUP_SCHEDULE`            | `[500,1500,5000,12000,25000,40000]`  | Per-level weekly caps; each value is also the entry threshold.|
 | `WARMUP_FALLBACK_DAILY_CAP`  | `1000`                               | Daily cap used only when the live API quota can't be read.    |
 
-The consumer needs the `CF_READ_API_TOKEN` secret (account **Email: Read**) and
-the `ACCESS_ACCOUNT_ID` setting to read the live daily quota.
+When an optional read token is supplied during installation, the installer
+configures the consumer to read the live daily quota; otherwise the fallback
+cap applies.
 
 **Visibility**: the console's **Settings → Email sending → Sending usage** panel
 shows the live daily quota, emails sent, the current warmup week, and the full
 weekly progression (read-only), backed by `GET /api/email-sending-stats`.
-
-## 10. Operational Concerns
-- **Rate limits**: tune queue concurrency to Email Sending quota; intra-batch pacing if needed.
-- **Idempotency**: `UNIQUE(campaign_id, subscriber_id)` on `sends` prevents duplicates on retry.
-- **Auth**: enforce author allow-list + SPF/DKIM=pass on inbound.
-- **Compliance**: physical address + unsubscribe link/header in every email (CAN-SPAM/GDPR).
-- **Security**: attachment MIME/extension/magic-byte validation; signed URLs; secrets via Wrangler.
-- **Observability**: Workers Logs + Queues metrics + admin `/stats` reading D1.
-- **DLQ**: replay tool re-enqueues failed batches after fix.
-
-## 11. Implementation Milestones
-1. Provision zone, Email Routing, Email Sending DKIM, D1, Queues, R2.
-2. `db/schema.sql` + migrations + seed CLI.
-3. `consumer-worker` happy path with `SEND_EMAIL` (single recipient, no attachments).
-4. `ingest-worker` end-to-end batching (no attachments).
-5. **Attachment pipeline**: R2 storage in ingest, MIME builder w/ attachments + inline CIDs in consumer, size-budget checks, link-mode fallback.
-6. `tracker-worker` (opens, clicks, unsubscribe, attachment downloads).
-7. `bounce-worker` (GraphQL delivery-failure sync + mailto unsubscribe).
-8. `cleanup-worker` cron + retention.
-9. `admin-worker` + dashboard queries.
-10. Load test with synthetic subscriber list and large attachments; tune batch/concurrency.
 
 ---
 
@@ -688,5 +475,4 @@ weekly progression (read-only), backed by `GET /api/email-sending-stats`.
 - [`docs/subscribe-unsubscribe.md`](docs/subscribe-unsubscribe.md) — every subscribe/unsubscribe path, double opt-in and the deliverability gate.
 - [`docs/warmup.md`](docs/warmup.md) — demand-driven warmup model, caps, progression and configuration.
 - [`docs/retention.md`](docs/retention.md) — what ages out, the cleanup cron, and cascades.
-- [`docs/deploy.md`](docs/deploy.md) — end-to-end deployment runbook.
 - [`docs/help.md`](docs/help.md) — the in-console help document (served from R2).
