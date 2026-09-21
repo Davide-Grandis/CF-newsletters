@@ -38,11 +38,11 @@ Before running the browser-based installer, the target Cloudflare account must h
 
 The installer asks for a short-lived API token with these permissions:
 
-- **Account:** Workers Scripts Write, D1 Write, Queues Write, Workers R2
-  Storage Write, Access Organizations/Identity Providers/Groups Write, Access
-  Apps and Policies Write, Zero Trust Write and Email Read;
-- **Zone:** Zone Read, Zone Settings Write, Workers Routes Write, Email Routing
-  Rules Write and Analytics Read.
+- **Account:** Workers Scripts Edit, D1 Edit, Queues Edit, Workers R2
+  Storage Edit, Access Organizations/Identity Providers/Groups Edit, Access
+  Apps and Policies Edit, Zero Trust Edit and Email Sending Read;
+- **Zone:** Zone Read, Zone Settings Edit, Workers Routes Edit, Email Routing
+  Rules Edit and Analytics Read.
 
 Restrict the token to the target account and zone, and revoke it after use.
 
